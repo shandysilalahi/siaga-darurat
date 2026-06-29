@@ -1,0 +1,3912 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Siaga Darurat – Layanan</title>
+  <meta name="description"
+    content="Minta bantuan darurat kendaraan segera. Teknisi terdekat siap membantu dalam menit." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- RealTimeSync Script -->
+  <script src="sync.js"></script>
+  <!-- Siaga API Client (jembatan ke backend nyata) -->
+  <script src="api-client.js"></script>
+  <style>
+    :root {
+      --red: #e53935;
+      --red-dark: #b71c1c;
+      --red-light: #ffebee;
+      --bg-body: #f6f8fc;
+      --bg-card: rgba(255, 255, 255, 0.85);
+      --text-main: #1f2937;
+      --text-muted: #4b5563;
+      --border-card: rgba(255, 255, 255, 0.60);
+      
+      --accent-blue: #3b82f6;
+      --accent-green: #10b981;
+    }
+
+    body.dark {
+      --bg-body: #0b0f19;
+      --bg-card: rgba(15, 23, 42, 0.85);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-card: rgba(255, 255, 255, 0.08);
+    }
+
+    * {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    /* Page transitions */
+    .page-transition-enter {
+      animation: slideInUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes slideInUp {
+      from {
+        opacity: 0;
+        transform: translateY(40px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideOutDown {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      to {
+        opacity: 0;
+        transform: translateY(40px);
+      }
+    }
+
+    /* ── USER LOCATION MARKER ─────────────────────────────── */
+    @keyframes user-ping {
+      0% {
+        transform: scale(1);
+        opacity: 0.9;
+      }
+
+      70% {
+        transform: scale(2.8);
+        opacity: 0;
+      }
+
+      100% {
+        transform: scale(1);
+        opacity: 0;
+      }
+    }
+
+    @keyframes user-core-pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.35);
+      }
+
+      50% {
+        box-shadow: 0 0 0 7px rgba(229, 57, 53, 0.12);
+      }
+    }
+
+    .user-ping {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: rgba(229, 57, 53, 0.45);
+      animation: user-ping 2s ease-out infinite;
+    }
+
+    .user-ping-2 {
+      animation-delay: 0.7s;
+    }
+
+    .pulse-user {
+      animation: user-core-pulse 2s ease-in-out infinite;
+    }
+
+    /* ── TECHNICIAN MARKER ─────────────────────────────────── */
+    @keyframes tech-glow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.3), 0 4px 16px rgba(30, 136, 229, 0.25);
+      }
+
+      50% {
+        box-shadow: 0 0 0 8px rgba(30, 136, 229, 0.1), 0 4px 22px rgba(30, 136, 229, 0.4);
+      }
+    }
+
+    .tech-glow {
+      animation: tech-glow 1.8s ease-in-out infinite;
+    }
+
+    @keyframes tech-arrived-glow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.35), 0 4px 20px rgba(76, 175, 80, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 0 12px rgba(76, 175, 80, 0.1), 0 4px 28px rgba(76, 175, 80, 0.5);
+      }
+    }
+
+    .tech-arrived {
+      animation: tech-arrived-glow 1.4s ease-in-out infinite;
+    }
+
+    /* ── NAME BADGE ────────────────────────────────────────── */
+    @keyframes badgePop {
+      0% {
+        transform: translateX(-50%) scale(0.7);
+        opacity: 0;
+      }
+
+      80% {
+        transform: translateX(-50%) scale(1.06);
+      }
+
+      100% {
+        transform: translateX(-50%) scale(1);
+        opacity: 1;
+      }
+    }
+
+    .tech-badge {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      animation: badgePop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .tech-badge::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: white;
+    }
+
+    /* ── MAP STATUS BAR ────────────────────────────────────── */
+    @keyframes statusFade {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .status-fade {
+      animation: statusFade 0.4s ease both;
+    }
+
+    /* ── ROUTE LINE ─────────────────────────────────────────── */
+    .route-active {
+      stroke-dasharray: 10 6;
+      animation: routeFlow 2s linear infinite;
+    }
+
+    @keyframes routeFlow {
+      to {
+        stroke-dashoffset: -48;
+      }
+    }
+
+    .route-remaining {
+      stroke: #e53935;
+      stroke-opacity: 0.85;
+      fill: none;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .route-traveled {
+      stroke: #4caf50;
+      stroke-opacity: 0.55;
+      fill: none;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 6 5;
+    }
+
+    /* ── SPEED CHIP ─────────────────────────────────────────── */
+    @keyframes speedPulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.7;
+      }
+    }
+
+    .speed-live {
+      animation: speedPulse 1.2s ease-in-out infinite;
+    }
+
+    /* Legacy compat */
+    @keyframes tech-pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.55;
+      }
+    }
+
+    /* Skeleton shimmer */
+    @keyframes shimmer {
+      0% {
+        background-position: -468px 0;
+      }
+
+      100% {
+        background-position: 468px 0;
+      }
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 936px 100%;
+      animation: shimmer 1.4s infinite linear;
+      border-radius: 8px;
+    }
+
+    /* Loading spinner */
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* Bounce in */
+    @keyframes bounceIn {
+      0% {
+        transform: scale(0.6);
+        opacity: 0;
+      }
+
+      70% {
+        transform: scale(1.08);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    .bounce-in {
+      animation: bounceIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    /* Slide down notification */
+    @keyframes slideDownIn {
+      from {
+        transform: translateY(-120%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUpOut {
+      from {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      to {
+        transform: translateY(-120%);
+        opacity: 0;
+      }
+    }
+
+    .notif-enter {
+      animation: slideDownIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .notif-exit {
+      animation: slideUpOut 0.4s ease-in both;
+    }
+
+    /* Status bar height */
+    .status-bar {
+      height: env(safe-area-inset-top, 0px);
+    }
+
+    /* Map road colors */
+    .road-h {
+      background: #d9d4cc;
+    }
+
+    .road-v {
+      background: #d9d4cc;
+    }
+
+    .block-a {
+      background: #e5e0d8;
+    }
+
+    .block-b {
+      background: #dbd5cc;
+    }
+
+    /* Card hover */
+    .hover-lift {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .hover-lift:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(229, 57, 53, 0.12);
+    }
+
+    /* Bottom panel slide */
+    @keyframes panelSlideUp {
+      from {
+        transform: translateY(100%);
+      }
+
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    .panel-slide-up {
+      animation: panelSlideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    /* Map container */
+    .map-canvas {
+      background-color: #f0ede8;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* gradient-text */
+    .gradient-text {
+      background: linear-gradient(90deg, #e53935, #ff5252);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Service icon colors */
+    .svc-mogok {
+      background: #ffebee;
+    }
+
+    .svc-ban {
+      background: #e8f5e9;
+    }
+
+    .svc-bensin {
+      background: #fff3e0;
+    }
+
+    .svc-mesin {
+      background: #e8eaf6;
+    }
+
+    /* Chat bubble */
+    .chat-bubble {
+      border-radius: 18px 18px 4px 18px;
+    }
+
+    .chat-bubble-user {
+      border-radius: 18px 18px 18px 4px;
+    }
+
+    /* Fade in */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ETA countdown */
+    @keyframes countPulse {
+
+      0%,
+      100% {
+        color: #e53935;
+      }
+
+      50% {
+        color: #ff8a80;
+      }
+    }
+
+    .eta-count {
+      animation: countPulse 2s ease-in-out infinite;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f5f5f5;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #e53935;
+      border-radius: 4px;
+    }
+
+    /* Route line animation */
+    .route-dash {
+      stroke-dasharray: 12 6;
+      stroke-dashoffset: 0;
+      animation: routeFlow 3s linear infinite;
+    }
+
+    @keyframes routeFlow {
+      to {
+        stroke-dashoffset: -54;
+      }
+    }
+
+    /* ══ RATING MODAL ════════════════════════════════════════════ */
+
+    /* Modal bounce-in entrance */
+    @keyframes modal-bounce-in {
+      0% {
+        opacity: 0;
+        transform: translateY(60px) scale(0.92);
+      }
+
+      55% {
+        opacity: 1;
+        transform: translateY(-8px) scale(1.015);
+      }
+
+      75% {
+        transform: translateY(4px) scale(0.997);
+      }
+
+      90% {
+        transform: translateY(-2px) scale(1.003);
+      }
+
+      100% {
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes modal-fade-out {
+      to {
+        opacity: 0;
+        transform: translateY(24px) scale(0.95);
+      }
+    }
+
+    .rating-modal-enter {
+      animation: modal-bounce-in 0.62s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .rating-modal-exit {
+      animation: modal-fade-out 0.3s ease both;
+    }
+
+    /* Star elastic pop on click */
+    @keyframes star-pop {
+      0% {
+        transform: scale(1);
+      }
+
+      30% {
+        transform: scale(1.45);
+      }
+
+      55% {
+        transform: scale(0.88);
+      }
+
+      78% {
+        transform: scale(1.12);
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    .star-pop {
+      animation: star-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Star gold fill transition */
+    .rating-star {
+      transition: transform 0.15s ease;
+      cursor: pointer;
+      filter: drop-shadow(0 0 0px transparent);
+    }
+
+    .rating-star:hover {
+      transform: scale(1.15);
+    }
+
+    .rating-star.filled {
+      filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
+    }
+
+    /* Textarea glowing focus */
+    .review-textarea {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1.5px solid rgba(255, 255, 255, 0.12);
+      color: #f9fafb;
+      resize: none;
+      transition: border-color 0.25s, box-shadow 0.25s;
+      border-radius: 14px;
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 13px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      outline: none;
+    }
+
+    .review-textarea::placeholder {
+      color: rgba(255, 255, 255, 0.28);
+    }
+
+    .review-textarea:focus {
+      border-color: rgba(139, 92, 246, 0.7);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18), 0 0 16px rgba(139, 92, 246, 0.12);
+    }
+
+    /* Submit button gradient + glow */
+    .submit-review-btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 14px;
+      color: white;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, #7c3aed, #a855f7, #ec4899);
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.35);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .submit-review-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #6d28d9, #9333ea, #db2777);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .submit-review-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(139, 92, 246, 0.5);
+    }
+
+    .submit-review-btn:hover::before {
+      opacity: 1;
+    }
+
+    .submit-review-btn:active {
+      transform: translateY(0);
+    }
+
+    .submit-review-btn span {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Checkmark SVG draw animation */
+    @keyframes check-draw {
+      from {
+        stroke-dashoffset: 80;
+        opacity: 0.6;
+      }
+
+      to {
+        stroke-dashoffset: 0;
+        opacity: 1;
+      }
+    }
+
+    @keyframes check-circle-pop {
+      0% {
+        transform: scale(0);
+        opacity: 0;
+      }
+
+      60% {
+        transform: scale(1.12);
+        opacity: 1;
+      }
+
+      80% {
+        transform: scale(0.96);
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    @keyframes success-glow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 40px rgba(34, 197, 94, 0.6);
+      }
+    }
+
+    .check-circle-anim {
+      animation: check-circle-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1) both,
+        success-glow 2s ease-in-out 0.5s infinite;
+    }
+
+    .check-draw-anim {
+      stroke-dasharray: 80;
+      stroke-dashoffset: 80;
+      animation: check-draw 0.55s ease 0.35s forwards;
+    }
+
+    /* Complete service button */
+    .complete-service-btn {
+      width: 100%;
+      padding: 13px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 14px;
+      color: white;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 4px 18px rgba(22, 163, 74, 0.35);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .complete-service-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(22, 163, 74, 0.5);
+    }
+
+    .complete-service-btn:active {
+      transform: translateY(0);
+    }
+
+    /* ── FIXED BOTTOM CTA (Selesaikan Pekerjaan) ──────────────── */
+    .bottom-cta-wrap {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 90;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+      background: linear-gradient(to top, rgba(255, 255, 255, 0.97) 70%, rgba(255, 255, 255, 0));
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transform: translateY(120%);
+      transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .bottom-cta-wrap.visible {
+      transform: translateY(0);
+    }
+
+    .complete-cta-btn {
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 24px;
+      border: none;
+      border-radius: 18px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 800;
+      color: white;
+      cursor: pointer;
+      background: linear-gradient(135deg, #16a34a 0%, #059669 50%, #0d9488 100%);
+      background-size: 200% 200%;
+      animation: cta-gradient-shift 3s ease infinite;
+      box-shadow: 0 6px 28px rgba(22, 163, 74, 0.45), 0 2px 6px rgba(0, 0, 0, 0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .complete-cta-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, transparent 50%, rgba(255, 255, 255, 0.06) 100%);
+      pointer-events: none;
+    }
+
+    .complete-cta-btn::after {
+      content: '';
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.2), transparent 70%);
+      top: -30px;
+      right: -30px;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    @keyframes cta-gradient-shift {
+
+      0%,
+      100% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+    }
+
+    .complete-cta-btn:hover {
+      transform: translateY(-3px) scale(1.01);
+      box-shadow: 0 10px 36px rgba(22, 163, 74, 0.55), 0 3px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .complete-cta-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    /* Pulse ring behind CTA */
+    @keyframes cta-pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4);
+      }
+
+      70% {
+        box-shadow: 0 0 0 14px rgba(22, 163, 74, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+      }
+    }
+
+    .cta-pulse {
+      animation: cta-pulse-ring 2s ease-out infinite;
+    }
+
+    /* Ambient modal glow */
+    .rating-modal-card::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.2), rgba(16, 185, 129, 0.15));
+      z-index: -1;
+      filter: blur(16px);
+    }
+
+    /* ── Rating modal slide-up (mobile-first) ────────────────── */
+    @keyframes modal-slide-up {
+      0% {
+        opacity: 0;
+        transform: translateY(100%) scale(0.95);
+      }
+
+      50% {
+        opacity: 1;
+        transform: translateY(-6px) scale(1.01);
+      }
+
+      100% {
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @media (max-width: 639px) {
+      .rating-modal-enter {
+        animation: modal-slide-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+      }
+    }
+
+    /* ── Confetti particles ───────────────────────────────────── */
+    @keyframes confetti-fall {
+      0% {
+        transform: translateY(-10px) rotate(0deg);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translateY(120px) rotate(720deg);
+        opacity: 0;
+      }
+    }
+
+    .confetti-particle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 1px;
+      animation: confetti-fall 1.8s ease-out forwards;
+      pointer-events: none;
+    }
+
+    /* ╍╍╍╍╍╍╍╍╍╍ PREMIUM VISUAL LAYER (service) ╍╍╍╍╍╍╍╍╍╍ */
+
+    /* ── Animated mesh gradient body ────────────────────────── */
+    @keyframes svc-mesh-flow {
+      0% {
+        background-position: 0% 50%;
+      }
+
+      40% {
+        background-position: 70% 20%;
+      }
+
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    body {
+      background: #f6f8fc;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -3;
+      background:
+        radial-gradient(ellipse 70% 55% at 10% 5%, rgba(229, 57, 53, 0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 70% at 90% 95%, rgba(15, 23, 42, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 80% 40% at 50% 50%, rgba(239, 68, 68, 0.04) 0%, transparent 80%),
+        linear-gradient(155deg, #f6f8fc 0%, #fef2f2 45%, #f0f4ff 75%, #f6f8fc 100%);
+      background-size: 400% 400%;
+      animation: svc-mesh-flow 26s ease-in-out infinite;
+    }
+
+    /* ── Glow orbs ────────────────────────────────────── */
+    @keyframes svc-orb-drift {
+
+      0%,
+      100% {
+        transform: translate(0, 0) scale(1);
+      }
+
+      40% {
+        transform: translate(25px, -18px) scale(1.05);
+      }
+
+      70% {
+        transform: translate(-15px, 12px) scale(0.97);
+      }
+    }
+
+    .svc-glowing-orb {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: -2;
+      filter: blur(60px);
+    }
+
+    .svc-orb-red {
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(229, 57, 53, 0.18), rgba(239, 68, 68, 0.06) 60%, transparent);
+      top: -100px;
+      right: -80px;
+      opacity: 0.6;
+      animation: svc-orb-drift 20s ease-in-out infinite;
+    }
+
+    .svc-orb-navy {
+      width: 360px;
+      height: 360px;
+      background: radial-gradient(circle, rgba(15, 23, 42, 0.10), rgba(30, 58, 138, 0.04) 60%, transparent);
+      bottom: -80px;
+      left: -80px;
+      opacity: 0.5;
+      animation: svc-orb-drift 28s ease-in-out infinite reverse;
+    }
+
+    /* ── Dot grid ────────────────────────────────────────── */
+    #svc-dot-grid {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-image: radial-gradient(circle, rgba(229, 57, 53, 0.07) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      opacity: 0.55;
+    }
+
+    /* ── Glassmorphism white cards ─────────────────────────── */
+    #location-section>div>div,
+    #map-section>div>div,
+    #request-section>div>div,
+    #tech-section>div>div,
+    #tracking-section>div>div,
+    #tips-section>div>div {
+      background: rgba(255, 255, 255, 0.80) !important;
+      backdrop-filter: blur(16px) saturate(1.7);
+      -webkit-backdrop-filter: blur(16px) saturate(1.7);
+      border: 1px solid rgba(255, 255, 255, 0.60) !important;
+      box-shadow:
+        0 4px 28px rgba(229, 57, 53, 0.07),
+        0 1px 4px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    }
+
+    /* ── Navbar glassmorphism ────────────────────────────── */
+    nav {
+      background: rgba(255, 255, 255, 0.80) !important;
+      backdrop-filter: blur(22px) saturate(1.8);
+      -webkit-backdrop-filter: blur(22px) saturate(1.8);
+      border-bottom: 1px solid rgba(229, 57, 53, 0.08) !important;
+      box-shadow: 0 2px 20px rgba(229, 57, 53, 0.07);
+    }
+
+    /* ── Service banner gradient upgrade ────────────────────── */
+    #svc-banner-inner {
+      box-shadow: 0 12px 36px rgba(220, 38, 38, 0.30), 0 3px 8px rgba(0, 0, 0, 0.10);
+    }
+
+    /* ── Tilt on tech stats grid ───────────────────────────── */
+    @keyframes svc-gradient-shift {
+
+      0%,
+      100% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+    }
+
+    .svc-tilt {
+      transform-style: preserve-3d;
+      transform:
+        perspective(600px) rotateY(calc(var(--tx, 0) * 1deg)) rotateX(calc(var(--ty, 0) * -1deg)) translateZ(0);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    /* ── Stagger upgrade ───────────────────────────────────── */
+    .page-transition-enter {
+      animation: slideInUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes slideInUp {
+      from {
+        opacity: 0;
+        transform: translateY(48px) scale(0.97);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* Section fade-in on scroll */
+    .section-reveal {
+      opacity: 0;
+      transform: translateY(32px) scale(0.98);
+      transition:
+        opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .section-reveal.revealed {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    /* ── Circuit lines on service page ─────────────────────── */
+    @keyframes svc-circuit {
+      from {
+        stroke-dashoffset: 800;
+      }
+
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    .svc-circuit-svg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.06;
+    }
+
+    .svc-circuit-line {
+      stroke-dasharray: 10 8;
+      animation: svc-circuit 50s linear infinite;
+    }
+
+    /* ── Real Map Tracking Styles ── */
+    #leaflet-map {
+      background-color: #f0ede8;
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* Tracking View Mode */
+    body.tracking-view {
+      overflow: hidden;
+    }
+    
+    body.tracking-view #svc-banner,
+    body.tracking-view #location-section,
+    body.tracking-view #request-section,
+    body.tracking-view #tips-section {
+      display: none !important;
+    }
+    
+    body.tracking-view #map-section {
+      position: fixed;
+      top: 56px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0 !important;
+      margin: 0 !important;
+      z-index: 40;
+    }
+    
+    body.tracking-view #map-section > div {
+      border-radius: 0 !important;
+      border: none !important;
+      height: 100% !important;
+      box-shadow: none !important;
+    }
+    
+    body.tracking-view #map-canvas {
+      height: 100% !important;
+      border-radius: 0 !important;
+    }
+    
+    /* Bottom Sheet Layout for Technician Assigned Section */
+    body.tracking-view #tech-section {
+      display: block !important;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      padding: 0 !important;
+      margin: 0 !important;
+      pointer-events: none; /* Let clicks pass through empty space */
+    }
+    
+    body.tracking-view #tech-section > div {
+      pointer-events: auto; /* Re-enable clicks for sheet content */
+      border-radius: 28px 28px 0 0 !important;
+      box-shadow: 0 -10px 36px rgba(0, 0, 0, 0.15) !important;
+      border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      border-bottom: none !important;
+      background: rgba(255, 255, 255, 0.95) !important;
+      backdrop-filter: blur(20px) saturate(1.8) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(1.8) !important;
+      max-width: 480px;
+      margin: 0 auto;
+      transform: translateY(0);
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    
+    /* Drag Handle */
+    .sheet-handle {
+      width: 40px;
+      height: 5px;
+      background: #cbd5e1;
+      border-radius: 99px;
+      margin: 10px auto 2px auto;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .sheet-handle:hover {
+      background: #94a3b8;
+    }
+    
+    /* Marker Customizations */
+    .tech-leaflet-icon {
+      transition: transform 0.2s ease;
+    }
+
+    .leaflet-pane {
+      z-index: 1 !important;
+    }
+
+    .leaflet-control-container {
+      z-index: 10 !important;
+    }
+
+    /* ── SPEED LINE ANIMATIONS ── */
+    @keyframes speedLine {
+      0% {
+        transform: translateX(0);
+        opacity: 0;
+      }
+      30% {
+        opacity: 0.8;
+      }
+      100% {
+        transform: translateX(60px);
+        opacity: 0;
+      }
+    }
+
+    .speed-line-1 {
+      animation: speedLine 0.8s linear infinite;
+    }
+
+    .speed-line-2 {
+      animation: speedLine 0.6s linear infinite 0.15s;
+    }
+
+    .speed-line-3 {
+      animation: speedLine 1s linear infinite 0.3s;
+    }
+
+    /* ── TYPING INDICATOR ANIMATIONS ── */
+    @keyframes bounceDots {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-4px);
+      }
+    }
+
+    .typing-dot {
+      animation: bounceDots 1.4s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    /* ── UTILITIES ── */
+    .scrollbar-none::-webkit-scrollbar {
+      display: none;
+    }
+    .scrollbar-none {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* ── DARK MODE STYLES & INTERACTIVE MAP OVERRIDES ── */
+    body.dark {
+      background-color: var(--bg-body);
+      color: var(--text-main);
+    }
+    body.dark::before {
+      background:
+        radial-gradient(ellipse 70% 55% at 10% 5%, rgba(59, 130, 246, 0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 70% at 90% 95%, rgba(16, 185, 129, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 80% 40% at 50% 50%, rgba(59, 130, 246, 0.03) 0%, transparent 80%),
+        linear-gradient(155deg, #0b0f19 0%, #111827 45%, #030712 75%, #0b0f19 100%) !important;
+    }
+    body.dark nav {
+      background: rgba(15, 23, 42, 0.92) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    body.dark nav * {
+      color: #f1f5f9 !important;
+    }
+    body.dark nav button:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    body.dark #location-section > div,
+    body.dark #map-section > div,
+    body.dark #request-section > div,
+    body.dark #tech-section > div,
+    body.dark #tracking-section > div,
+    body.dark #tips-section > div {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border-card) !important;
+      box-shadow: var(--shadow-md) !important;
+    }
+    
+    /* Global text overrides in dark mode */
+    body.dark .text-gray-900,
+    body.dark .text-gray-800,
+    body.dark h1,
+    body.dark h2,
+    body.dark h3 {
+      color: #f8fafc !important;
+    }
+    body.dark .text-gray-600,
+    body.dark .text-gray-500 {
+      color: #94a3b8 !important;
+    }
+    body.dark .text-gray-700 {
+      color: #cbd5e1 !important;
+    }
+    body.dark .text-gray-400 {
+      color: #64748b !important;
+    }
+    body.dark .bg-white {
+      background-color: #1e293b !important;
+    }
+    body.dark .bg-gray-50 {
+      background-color: #0f172a !important;
+    }
+    body.dark .bg-gray-100 {
+      background-color: #1e293b !important;
+    }
+    body.dark .border-gray-100,
+    body.dark .border-gray-200,
+    body.dark .border-gray-50 {
+      border-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark .text-black {
+      color: #ffffff !important;
+    }
+    body.dark #leaflet-map {
+      filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.1);
+    }
+    body.dark #map-overlay {
+      background: rgba(15, 23, 42, 0.82) !important;
+      color: #e2e8f0;
+    }
+    body.dark #map-overlay p {
+      color: #94a3b8;
+    }
+    body.dark #map-eta-badge,
+    body.dark #chat-messages > div > div > .chat-bubble {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #f1f5f9 !important;
+    }
+    body.dark #chat-messages > div > div > .chat-bubble p {
+      color: #f1f5f9 !important;
+    }
+    body.dark #chat-modal > div {
+      background: #0f172a !important;
+    }
+    body.dark #chat-modal input {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #ffffff !important;
+    }
+    body.dark #chat-modal .bg-white {
+      background: #0f172a !important;
+    }
+    body.dark #chat-modal .border-t {
+      border-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.dark #chat-messages {
+      background: rgba(15, 23, 42, 0.3) !important;
+    }
+    body.dark textarea,
+    body.dark input[type="text"] {
+      background: rgba(255, 255, 255, 0.03) !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #ffffff !important;
+    }
+    body.dark textarea:focus,
+    body.dark input[type="text"]:focus {
+      border-color: #10b981 !important;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
+    }
+
+    /* ── RADAR PULSE SCANNER ── */
+    @keyframes radar-pulse {
+      0% {
+        transform: scale(0.6);
+        opacity: 0.9;
+      }
+      100% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
+    }
+    .radar-pulse-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid #10b981;
+      animation: radar-pulse 2s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+    }
+
+    /* ── VEHICLE TRACKING PROGRESS ── */
+    @keyframes vehicle-ride {
+      0%, 100% {
+        transform: translateY(0) rotate(0deg);
+      }
+      50% {
+        transform: translateY(-2px) rotate(1deg);
+      }
+    }
+    .riding-animation {
+      animation: vehicle-ride 0.5s ease-in-out infinite;
+    }
+
+    /* ── FULLSCREEN OVERLAY ENTRY ── */
+    .overlay-scale-up {
+      animation: overlayScaleUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes overlayScaleUp {
+      from { transform: scale(0.85); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    /* ── GOJEK-STYLE ADDITIONS ── */
+    #tech-status-header { transition: background 0.5s ease; }
+
+    .gojek-action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 10px 4px;
+      border-radius: 16px;
+      font-weight: 700;
+      font-size: 11px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      width: 100%;
+    }
+    .gojek-action-btn:active { transform: scale(0.93); }
+    .gojek-action-btn:hover { filter: brightness(0.94); }
+    .gojek-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .start-service-btn {
+      width: 100%; padding: 14px; border-radius: 16px;
+      font-weight: 900; font-size: 15px; color: white; border: none; cursor: pointer;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 6px 24px rgba(22,163,74,0.4);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .start-service-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(22,163,74,0.5); }
+    .start-service-btn:active { transform: scale(0.98); }
+
+    @keyframes floatBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+    #wa-admin-float button { animation: floatBounce 3s ease-in-out infinite; }
+
+    body.tracking-view #tech-section > div { border-radius: 28px 28px 0 0 !important; }
+  </style>
+</head>
+
+<body class="bg-gray-50 antialiased overflow-x-hidden" id="body">
+
+  <!-- ════ PREMIUM BACKGROUND LAYER (service) ════ -->
+  <div class="svc-glowing-orb svc-orb-red" aria-hidden="true"></div>
+  <div class="svc-glowing-orb svc-orb-navy" aria-hidden="true"></div>
+  <div id="svc-dot-grid" aria-hidden="true"></div>
+  <svg class="svc-circuit-svg" viewBox="0 0 1440 900" fill="none" preserveAspectRatio="none" aria-hidden="true">
+    <polyline class="svc-circuit-line" points="0,80 150,80 150,300 450,300 450,180 750,180 750,500 1440,500"
+      stroke="#e53935" stroke-width="1.2" />
+    <polyline class="svc-circuit-line" points="1440,650 1100,650 1100,400 700,400 700,600 300,600 300,820 0,820"
+      stroke="#dc2626" stroke-width="1" style="animation-delay:-18s;" />
+  </svg>
+
+
+  <!-- NOTIFICATION TOAST (top)
+  ============================================================ -->
+  <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[90vw] max-w-sm pointer-events-none">
+    <!-- Toasts injected here -->
+  </div>
+
+  <!-- ============================================================
+       MAIN HEADER / NAV
+  ============================================================ -->
+  <nav class="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100 shadow-sm">
+    <div class="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+      <!-- Back button -->
+      <button id="btn-back"
+        class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all"
+        onclick="goBack()">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+        Kembali
+      </button>
+
+      <!-- Title -->
+      <div class="flex items-center gap-2" id="page-title-wrap">
+        <div id="svc-icon-header" class="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"></div>
+        <span class="text-sm font-bold text-gray-900" id="svc-title-header">Layanan Darurat</span>
+      </div>
+
+      <!-- Logo / Brand & Theme Toggle -->
+      <div class="flex items-center gap-3">
+        <button id="theme-toggle" onclick="toggleTheme()" class="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 hover:scale-105 active:scale-95 transition-all flex items-center justify-center border border-gray-200 dark:border-slate-700">
+          <svg id="theme-sun" class="w-4 h-4 hidden text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <svg id="theme-moon" class="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        </button>
+
+        <a href="index (5).html" class="flex items-center gap-1.5">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:#e53935">
+            <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <span class="text-sm font-extrabold hidden sm:block text-gray-900">Siaga<span
+              style="color:#e53935">Darurat</span></span>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================================================
+       MAIN CONTENT
+  ============================================================ -->
+  <main class="pt-14 max-w-2xl mx-auto pb-10 page-transition-enter" id="main-content">
+
+    <!-- ── SERVICE HERO BANNER ─────────────────────────────────── -->
+    <div id="svc-banner" class="px-4 pt-6 pb-4">
+      <div class="rounded-2xl p-5 flex items-center gap-4" id="svc-banner-inner"
+        style="background:linear-gradient(135deg,#e53935,#b71c1c)">
+        <div id="svc-icon-lg"
+          class="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0 text-white">
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-white/70 text-xs font-semibold mb-0.5">Layanan Aktif</div>
+          <h1 class="text-white text-xl font-extrabold leading-tight" id="svc-title-main">Bantuan Darurat</h1>
+          <p class="text-white/75 text-xs mt-1" id="svc-desc-main">Teknisi profesional siap membantu Anda.</p>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-white/60 text-[10px] font-medium">Respon rata-rata</div>
+          <div class="text-white text-lg font-extrabold">&lt;10 min</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LOCATION SECTION ──────────────────────────────────────── -->
+    <div class="px-4 mb-4" id="location-section">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <!-- Location header -->
+        <div class="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4" style="color:#e53935" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="text-sm font-bold text-gray-800">Lokasi Anda</span>
+          </div>
+          <button id="btn-refresh-loc" onclick="requestLocation()"
+            class="text-xs font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+            style="background:#ffebee;color:#e53935">
+            Refresh
+          </button>
+        </div>
+
+        <!-- Location state: loading -->
+        <div id="loc-loading" class="px-4 py-4 flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ffebee">
+            <svg class="w-4 h-4 spinner" style="color:#e53935" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </div>
+          <div>
+            <div class="skeleton h-3 w-40 mb-1.5"></div>
+            <div class="skeleton h-2.5 w-28"></div>
+          </div>
+        </div>
+
+        <!-- Location state: success -->
+        <div id="loc-success" class="hidden px-4 py-4 fade-in">
+          <div class="flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 pulse-user"
+              style="background:#e53935">
+              <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-bold text-gray-900 mb-0.5" id="loc-address">Mendeteksi alamat…</div>
+              <div class="text-xs text-gray-500" id="loc-coords"></div>
+              <div class="mt-2 flex items-center gap-1">
+                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                <span class="text-xs text-green-600 font-semibold">Lokasi GPS Terdeteksi</span>
+              </div>
+            </div>
+            <button onclick="showManualInput()"
+              class="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors mt-1 flex-shrink-0">
+              Atur
+            </button>
+          </div>
+        </div>
+
+        <!-- Location state: denied -->
+        <div id="loc-denied" class="hidden px-4 py-4">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div>
+              <div class="text-sm font-bold text-gray-800">Akses lokasi ditolak</div>
+              <div class="text-xs text-gray-500">Masukkan lokasi secara manual</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <input id="manual-loc-input" type="text" placeholder="Masukkan alamat Anda..."
+              class="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100 transition-all"
+              oninput="enableManualSearch()" />
+            <button id="btn-manual-search" onclick="useManualLocation()" disabled
+              class="px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
+              style="background:#e53935">Cari</button>
+          </div>
+        </div>
+
+        <!-- Manual input overlay (shown when adjustment requested) -->
+        <div id="loc-manual" class="hidden px-4 py-3 border-t border-gray-50">
+          <div class="text-xs font-semibold text-gray-500 mb-2">Sesuaikan lokasi</div>
+          <div class="flex gap-2">
+            <input id="manual-loc-input2" type="text" placeholder="Masukkan alamat baru..."
+              class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100 transition-all" />
+            <button onclick="applyManualLocation()"
+              class="px-3 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+              style="background:#e53935">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MAP SECTION ───────────────────────────────────────────── -->
+    <div class="px-4 mb-4" id="map-section">
+      <!-- Floating Technician Journey Card -->
+      <div id="tech-journey-card" class="hidden absolute top-4 left-4 right-4 z-[45] max-w-md mx-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-[24px] border border-gray-100 dark:border-slate-800 shadow-2xl p-4 transition-all duration-300 transform -translate-y-4 opacity-0">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <!-- Pulsing state indicator -->
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400" id="journey-status">Teknisi Sedang Menuju Lokasi</span>
+          </div>
+          <div class="text-xs font-black text-gray-900 dark:text-white" id="journey-progress-pct">0%</div>
+        </div>
+
+        <!-- Animated Slider Progress Line (🛵──────────────🏠) -->
+        <div class="relative w-full h-12 flex items-center mb-3 px-2">
+          <!-- Track line background -->
+          <div class="absolute left-2 right-10 h-1 bg-gray-100 dark:bg-slate-800 rounded-full"></div>
+          <!-- Colored track line for traveled path -->
+          <div id="trip-progress-line" class="absolute left-2 h-1 bg-gradient-to-r from-emerald-400 to-teal-500 dark:from-emerald-500 dark:to-teal-600 rounded-full" style="width: 0%"></div>
+          
+          <!-- Home icon on the right -->
+          <div class="absolute right-0 w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60 flex items-center justify-center shadow-sm">
+            <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+            </svg>
+          </div>
+          
+          <!-- Scooter rider (moves along track) -->
+          <div id="rider-progress-wrapper" class="absolute transition-all duration-1000 ease-out flex items-center" style="left: 0%; transform: translateX(-50%);">
+            <div class="relative w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 dark:from-emerald-500 dark:to-teal-600 border border-white dark:border-slate-800 flex items-center justify-center shadow-lg riding-animation">
+              <!-- Toolbox icon attached to vehicle -->
+              <span class="absolute -top-1.5 -right-1.5 text-[10px] bg-amber-400 border border-white dark:border-slate-800 rounded-full px-1 shadow-sm font-bold">🧰</span>
+              <!-- Motor Scooter SVG -->
+              <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="5.5" cy="17.5" r="2.5" />
+                <circle cx="18.5" cy="17.5" r="2.5" />
+                <path d="M3 17.5h2.5M18.5 17.5H21" />
+                <path d="M12 5.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" />
+                <path d="M12 5.5L9 9H5" />
+                <path d="M12 5.5l2 3h4" />
+                <path d="M9 9l3 8.5" />
+                <path d="M14 8.5l-2.5 9" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-gray-50 dark:border-slate-800 pt-3">
+          <div>
+            <div class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Status Perjalanan</div>
+            <div class="text-xs font-bold text-gray-800 dark:text-slate-200 mt-0.5" id="journey-status-desc">Teknisi sedang menuju lokasi Anda.</div>
+          </div>
+          <div class="text-right">
+            <div class="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Estimasi Tiba</div>
+            <div class="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5" id="journey-eta">-- menit</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden relative">
+        <div class="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4" style="color:#e53935" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            <span class="text-sm font-bold text-gray-800">Peta Sekitar</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-400">
+            <div class="flex items-center gap-1">
+              <div class="w-2.5 h-2.5 rounded-full" style="background:#e53935"></div>
+              Anda
+            </div>
+            <div class="flex items-center gap-1">
+              <div class="w-2.5 h-2.5 rounded-full" style="background:#1e88e5"></div>
+              Teknisi
+            </div>
+          </div>
+        </div>
+
+        <!-- Map canvas (300px tall for more real estate) -->
+        <div class="map-canvas" style="height:310px;" id="map-canvas">
+
+          <!-- Leaflet Map Container -->
+          <div id="leaflet-map" style="width: 100%; height: 100%; z-index: 1;"></div>
+          
+          <!-- Recenter Map Button -->
+          <button id="btn-recenter" onclick="recenterMap()" class="absolute w-10 h-10 bg-white rounded-xl shadow-lg border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors" style="bottom: 50px; right: 10px; z-index: 10; display: none;">
+            <svg class="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 12c-2.908 0-5.623-1.033-7.843-2.918" />
+            </svg>
+          </button>
+
+          <!-- ░░ ETA BADGE (top right) ░░ -->
+          <div id="map-eta-badge" class="absolute flex items-center gap-2" style="top:10px;right:10px;background:white;border-radius:14px;
+                      box-shadow:0 4px 16px rgba(0,0,0,0.14);padding:7px 11px;
+                      border:1.5px solid #f0f0f0;display:none;z-index:10;">
+            <div style="width:28px;height:28px;border-radius:50%;background:#e8f5e9;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg style="width:14px;height:14px;color:#2e7d32;" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:9px;color:#9ca3af;line-height:1;margin-bottom:2px;">Tiba dalam</div>
+              <div id="eta-display" class="eta-count"
+                style="font-size:15px;font-weight:900;color:#111827;line-height:1;">-- menit</div>
+            </div>
+          </div>
+
+          <!-- Speed indicator chip (bottom-left, shows after tech assigned) -->
+          <div id="map-speed-chip" class="absolute flex items-center gap-1" style="bottom:10px;left:10px;background:rgba(30,136,229,0.9);
+                      border-radius:20px;padding:4px 9px;display:none;z-index:10;">
+            <div class="speed-live" style="width:6px;height:6px;border-radius:50%;background:#fff;"></div>
+            <span id="speed-val" style="font-size:10px;font-weight:800;color:white;letter-spacing:0.03em;">--
+              km/h</span>
+          </div>
+
+          <!-- ░░ LIVE STATUS BAR (bottom) ░░ -->
+          <div id="map-status-bar" style="position:absolute;bottom:0;left:0;right:0;
+                      background:rgba(17,24,39,0.82);backdrop-filter:blur(6px);
+                      padding:8px 12px;display:none;align-items:center;gap:8px;z-index:10;">
+            <div style="width:7px;height:7px;border-radius:50%;background:#4caf50;
+                        flex-shrink:0;animation:tech-pulse 1s ease-in-out infinite;"></div>
+            <span id="map-status-text" class="status-fade"
+              style="font-size:11px;font-weight:700;color:#f9fafb;flex:1;"></span>
+            <span id="map-dist-chip" style="font-size:10px;font-weight:700;color:#93c5fd;
+                         background:rgba(30,136,229,0.25);padding:2px 7px;
+                         border-radius:8px;flex-shrink:0;">-- km</span>
+          </div>
+
+          <!-- ░░ INITIAL MAP OVERLAY ░░ -->
+          <div id="map-overlay" class="absolute inset-0 flex flex-col items-center justify-center gap-3"
+            style="background:rgba(255,255,255,0.72);backdrop-filter:blur(5px);z-index:10;">
+            <div style="width:52px;height:52px;border-radius:50%;background:#ffebee;
+                        display:flex;align-items:center;justify-content:center;">
+              <svg style="width:26px;height:26px;color:#e53935;" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+            </div>
+            <p style="font-size:13px;font-weight:600;color:#4b5563;text-align:center;padding:0 24px;">
+              Klik <strong style="color:#e53935;">"Cari Teknisi"</strong> untuk menampilkan<br>peta live &amp; teknisi
+              terdekat
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SERVICE REQUEST PANEL ──────────────────────────────────── -->
+    <div class="px-4 mb-4" id="request-section">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-50">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4" style="color:#e53935" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span class="text-sm font-bold text-gray-800">Permintaan Layanan</span>
+          </div>
+        </div>
+        <div class="px-4 py-4">
+          <!-- Service badge -->
+          <div class="flex items-center gap-3 mb-4 p-3 rounded-xl" id="svc-request-badge" style="background:#ffebee">
+            <div id="svc-req-icon" class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style="background:white"></div>
+            <div>
+              <div class="text-xs text-gray-500 font-medium">Layanan Dipilih</div>
+              <div class="text-sm font-bold text-gray-900" id="svc-req-name">Bantuan Kendaraan</div>
+            </div>
+            <div class="ml-auto">
+              <span class="text-xs px-2 py-1 rounded-lg font-semibold"
+                style="background:#e53935;color:white">Aktif</span>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="mb-4">
+            <label class="block text-xs font-semibold text-gray-500 mb-1.5">Catatan tambahan (opsional)</label>
+            <textarea id="notes-input" rows="2" placeholder="Contoh: Mobil di depan minimarket, ban depan kiri..."
+              class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:border-red-300 focus:ring-2 focus:ring-red-100 transition-all text-gray-700 placeholder-gray-400"></textarea>
+          </div>
+
+          <!-- Request button -->
+          <button id="btn-request" onclick="requestTechnician()"
+            class="w-full py-3.5 rounded-xl font-bold text-white text-sm transition-all hover:opacity-90 hover:shadow-lg hover:shadow-red-200 active:scale-[0.98] flex items-center justify-center gap-2"
+            style="background:linear-gradient(135deg,#e53935,#b71c1c)">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Cari Teknisi Sekarang
+          </button>
+
+          <!-- Searching state (hidden) -->
+          <div id="searching-state" class="hidden">
+            <div class="flex flex-col items-center py-4 gap-3">
+              <div class="relative w-20 h-20 flex items-center justify-center mb-2">
+                <div class="radar-pulse-ring" style="animation-delay: 0s"></div>
+                <div class="radar-pulse-ring" style="animation-delay: 0.6s"></div>
+                <div class="radar-pulse-ring" style="animation-delay: 1.2s"></div>
+                <div class="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center relative z-10 shadow-lg shadow-emerald-200 dark:shadow-none">
+                  <svg class="w-6 h-6 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+              <div class="w-full text-center">
+                <div class="text-base font-extrabold text-gray-900 dark:text-white" id="search-status-title">Mencari Teknisi Terdekat</div>
+                <div class="text-xs text-gray-500 dark:text-slate-400 mt-1" id="search-status-text">Memindai teknisi aktif di sekitar Anda...</div>
+              </div>
+
+              <!-- Booking Steps Progress Tracker -->
+              <div class="w-full bg-gray-50 dark:bg-slate-800/40 border border-gray-100 dark:border-slate-800/85 rounded-2xl p-4 my-2 text-left space-y-3">
+                <div class="flex items-center gap-3 transition-all duration-300" id="search-step-1">
+                  <div class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-blue-500 text-white animate-pulse" id="search-step-1-icon">1</div>
+                  <span class="text-xs font-semibold text-gray-800 dark:text-slate-200" id="search-step-1-text">Mencari teknisi terdekat...</span>
+                </div>
+                <div class="flex items-center gap-3 opacity-40 transition-all duration-300" id="search-step-2">
+                  <div class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-300 text-white" id="search-step-2-icon">2</div>
+                  <span class="text-xs font-semibold text-gray-600 dark:text-slate-400" id="search-step-2-text">Menghubungi teknisi tersedia...</span>
+                </div>
+                <div class="flex items-center gap-3 opacity-40 transition-all duration-300" id="search-step-3">
+                  <div class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-300 text-white" id="search-step-3-icon">3</div>
+                  <span class="text-xs font-semibold text-gray-600 dark:text-slate-400" id="search-step-3-text">Teknisi ditemukan</span>
+                </div>
+                <div class="flex items-center gap-3 opacity-40 transition-all duration-300" id="search-step-4">
+                  <div class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-300 text-white" id="search-step-4-icon">4</div>
+                  <span class="text-xs font-semibold text-gray-600 dark:text-slate-400" id="search-step-4-text">Teknisi menerima pesanan Anda</span>
+                </div>
+              </div>
+
+              <!-- Skeletons representing scanning -->
+              <div class="w-full space-y-2 mt-1">
+                <div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-100 dark:border-slate-800/50">
+                  <div class="skeleton w-10 h-10 rounded-full flex-shrink-0"></div>
+                  <div class="flex-1 min-w-0">
+                    <div class="skeleton h-3 w-28 mb-1.5"></div>
+                    <div class="skeleton h-2.5 w-16"></div>
+                  </div>
+                  <div class="skeleton h-6 w-16 rounded-xl"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TECHNICIAN ASSIGNED BOTTOM SHEET (initially hidden) ────────────── -->
+    <div id="tech-section" class="hidden px-4 mb-4">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden panel-slide-up">
+        <!-- Drag Handle for expansion -->
+        <div class="sheet-handle" onclick="toggleBottomSheet()"></div>
+
+        <!-- Gojek-style gradient status header -->
+        <div id="tech-status-header" class="px-4 py-3 flex items-center justify-between" style="background:linear-gradient(135deg,#16a34a,#15803d)">
+          <div class="flex items-center gap-2">
+            <span class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
+            </span>
+            <span class="text-sm font-extrabold text-white tracking-wide" id="tech-header-status">Teknisi Sedang Menuju</span>
+          </div>
+          <div class="flex items-center gap-1.5 rounded-full px-3 py-1.5" style="background:rgba(255,255,255,0.2)">
+            <svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-white font-extrabold text-sm" id="header-eta-text">~10 mnt</span>
+          </div>
+        </div>
+
+        <div class="px-4 py-4">
+          <!-- Tech profile -->
+          <div class="flex items-center gap-4 mb-4">
+            <div class="relative flex-shrink-0">
+              <div class="w-16 h-16 rounded-full overflow-hidden bg-red-50 flex items-center justify-center border-2 border-gray-100 shadow-md"
+                id="tech-avatar">
+                <svg viewBox="0 0 64 64" fill="none" class="w-full h-full text-gray-600">
+                  <rect width="64" height="64" rx="16" fill="#ffebee"/>
+                  <!-- Head & cap -->
+                  <path d="M32 12C23.16 12 18 16 18 25c0 5 3 9 5 12h18c2-3 5-7 5-12 0-9-5.16-13-14-13z" fill="#e53935"/>
+                  <circle cx="32" cy="27" r="10" fill="#fbc02d"/> <!-- Face -->
+                  <!-- Cap visor -->
+                  <path d="M22 18l20-3v4l-20 2z" fill="#b71c1c"/>
+                  <!-- Collar & shirt -->
+                  <path d="M16 52v4h32v-4c0-7-6-9-12-10l-4 3-4-3c-6 1-12 3-12 10z" fill="#e53935"/>
+                </svg>
+              </div>
+              <div
+                class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-white flex items-center justify-center">
+                <svg class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  stroke-width="3">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-base font-extrabold text-gray-900" id="tech-name">Ahmad Rizki</div>
+              <div class="flex items-center gap-1 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                <span class="text-xs text-gray-500 font-medium" id="tech-rating">4.9 (284 ulasan)</span>
+              </div>
+              <div class="text-xs text-gray-400 mt-0.5" id="tech-cert">Teknisi Bersertifikat</div>
+              <div class="text-xs font-semibold text-blue-600 mt-0.5" id="tech-vehicle">Honda Vario • BK 4821 TAI</div>
+            </div>
+          </div>
+
+          <!-- Tech stats (Gojek-style) -->
+          <div class="grid grid-cols-3 divide-x divide-gray-100 border-t border-b border-gray-100 mb-3" id="tech-stats-grid">
+            <div class="py-3 text-center">
+              <div class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-0.5">ETA</div>
+              <div class="text-2xl font-black eta-count leading-none" id="tech-eta-val">10</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">menit</div>
+            </div>
+            <div class="py-3 text-center">
+              <div class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Jarak</div>
+              <div class="text-2xl font-black text-blue-600 leading-none" id="tech-dist-val">2.3</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">km</div>
+            </div>
+            <div class="py-3 text-center">
+              <div class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Rating</div>
+              <div class="text-xl font-black text-yellow-500 leading-none">4.9 ★</div>
+              <div class="text-[10px] text-gray-400 mt-0.5">bintang</div>
+            </div>
+          </div>
+
+          <!-- Status box -->
+          <div class="flex items-center gap-2.5 p-3 rounded-2xl mb-3" id="tech-status-box" style="background:#f0fdf4">
+            <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <span class="text-xs font-semibold text-green-800" id="tech-status-text">Teknisi sedang menuju lokasi Anda</span>
+          </div>
+
+          <!-- Action buttons (Gojek-style with icons) -->
+          <div id="action-buttons-grid">
+            <div class="grid grid-cols-4 gap-2">
+              <button onclick="whatsappTechnician()" class="gojek-action-btn" style="background:#dcfce7;color:#166534">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.149-.173.198-.297.297-.495.099-.198.05-.372-.025-.521-.075-.149-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413z"/>
+                </svg>
+                WA Teknisi
+              </button>
+              <button onclick="callTechnician()" class="gojek-action-btn" style="background:#dbeafe;color:#1e40af">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                </svg>
+                Telepon
+              </button>
+              <button onclick="openChat()" class="gojek-action-btn" style="background:#f3e8ff;color:#7e22ce">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                </svg>
+                Chat
+              </button>
+              <button onclick="cancelService()" class="gojek-action-btn" style="background:#fee2e2;color:#991b1b">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                Batal
+              </button>
+            </div>
+          </div>
+
+          <!-- Collapsable expanded detailed content (Timeline and steps) -->
+          <div id="bottom-sheet-expanded-content" class="hidden border-t border-gray-100 mt-4 pt-4 transition-all duration-300">
+            <!-- Progress timeline -->
+            <div class="mb-4">
+              <div class="flex justify-between mb-1">
+                <span class="text-[10px] font-bold text-gray-500">Progress Perjalanan</span>
+                <span class="text-[10px] font-bold text-gray-500" id="eta-total-display">10 min</span>
+              </div>
+              <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div id="progress-bar" class="h-full rounded-full transition-all duration-500"
+                  style="background:linear-gradient(90deg,#e53935,#ff8a80);width:10%"></div>
+              </div>
+            </div>
+
+            <!-- Status steps -->
+            <div class="space-y-3" id="status-steps">
+              <div class="flex items-center gap-3" data-step="1">
+                <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-green-500">
+                  <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    stroke-width="3">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div class="text-[11px] font-bold text-gray-800">Permintaan diterima</div>
+                  <div class="text-[9px] text-gray-400" id="step1-time"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3" data-step="2" id="step2">
+                <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-green-500">
+                  <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    stroke-width="3">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div class="text-[11px] font-bold text-gray-800">Teknisi dikonfirmasi</div>
+                  <div class="text-[9px] text-gray-400" id="step2-time"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3" data-step="3" id="step3">
+                <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" id="step3-icon"
+                  style="background:#e53935">
+                  <svg class="w-3 h-3 text-white spinner" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div class="text-[11px] font-bold text-gray-800">Dalam perjalanan</div>
+                  <div class="text-[9px] font-semibold" style="color:#e53935" id="step3-time">ETA: ~10 menit</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 opacity-40" data-step="4" id="step4">
+                <div class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                  <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div class="text-[11px] font-bold text-gray-600">Tiba di lokasi</div>
+                  <div class="text-[9px] text-gray-400">Menunggu…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SAFETY TIPS (contextual) ─────────────────────────────── -->
+    <div class="px-4 mb-4" id="tips-section">
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-50">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span class="text-sm font-bold text-gray-800">Tips Keamanan</span>
+          </div>
+        </div>
+        <div class="px-4 py-3 space-y-2" id="tips-content">
+          <!-- Loaded dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- spacer for fixed bottom CTA -->
+    <div id="bottom-cta-spacer" class="hidden" style="height:90px;"></div>
+
+  </main>
+
+  <!-- ════ FIXED BOTTOM CTA — "Selesaikan Pekerjaan" ════ -->
+  <div id="bottom-cta" class="bottom-cta-wrap">
+    <button class="complete-cta-btn cta-pulse" id="btn-selesaikan" onclick="onSelesaikanPekerjaan()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"
+        style="flex-shrink:0;">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span style="position:relative;z-index:1;">Selesaikan Pekerjaan</span>
+    </button>
+  </div>
+
+  <!-- ============================================================
+       CANCELLED STATE OVERLAY
+  ============================================================ -->
+  <div id="cancelled-overlay" class="hidden fixed inset-0 z-[150] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+    <div class="w-20 h-20 rounded-full bg-red-100/10 flex items-center justify-center mb-6">
+      <svg class="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </div>
+    <h3 class="text-2xl font-black text-white mb-2">Pesanan Batal</h3>
+    <p class="text-sm text-slate-400 max-w-sm mb-8 leading-relaxed">
+      Pesanan bantuan kendaraan darurat Anda telah dibatalkan. Hubungi admin untuk bantuan manual.
+    </p>
+    <div class="flex flex-col gap-3 w-full max-w-xs">
+      <button onclick="goBack()" class="w-full py-3.5 rounded-xl font-extrabold text-sm text-white transition-all hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-red-500/20" style="background:#e53935">
+        Kembali ke Beranda
+      </button>
+      <button onclick="contactAdmin()" class="w-full py-3.5 rounded-xl font-bold text-sm bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 transition-colors">
+        Hubungi Customer Service
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CHAT MODAL
+  ============================================================ -->
+  <div id="chat-modal" class="hidden fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-end"
+    onclick="closeChatOutside(event)">
+    <div class="bg-white w-full max-w-2xl mx-auto rounded-t-3xl overflow-hidden panel-slide-up flex flex-col" style="height: 80vh; max-height:85vh">
+      <!-- Chat header -->
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+        <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+          <svg class="w-6 h-6 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+            <path
+              d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+          </svg>
+        </div>
+        <div class="flex-1">
+          <div class="text-sm font-bold text-gray-900" id="chat-tech-name">Ahmad Rizki</div>
+          <div class="flex items-center gap-1">
+            <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+            <span class="text-xs text-green-600">Online • Dalam perjalanan</span>
+          </div>
+        </div>
+        <button onclick="closeChat()"
+          class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+          <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Chat messages -->
+      <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50/50" id="chat-messages">
+        <div class="flex gap-2">
+          <div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg class="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+              <path
+                d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+            </svg>
+          </div>
+          <div>
+            <div class="bg-gray-100 chat-bubble px-3.5 py-2.5 max-w-[85%] inline-block rounded-2xl rounded-tl-none">
+              <p class="text-sm text-gray-800">Halo! Saya Ahmad, teknisi Anda. Saya sedang dalam perjalanan ke lokasi Anda. 🔧</p>
+            </div>
+            <div class="text-[9px] text-gray-400 mt-1 ml-1" id="chat-initial-time">--:--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Typing Indicator -->
+      <div id="chat-typing-indicator" class="hidden flex gap-2 items-center px-4 py-2 bg-gray-100 rounded-full w-fit ml-4 mb-2 border border-gray-100 flex-shrink-0">
+        <span class="text-[10px] text-gray-500 font-medium">Teknisi sedang mengetik</span>
+        <div class="flex gap-0.5">
+          <span class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></span>
+          <span class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></span>
+          <span class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></span>
+        </div>
+      </div>
+
+      <!-- Quick replies suggesting scrollable bar -->
+      <div class="flex gap-2 px-4 py-2 overflow-x-auto whitespace-nowrap border-t border-gray-100 bg-white scrollbar-none flex-shrink-0">
+        <button onclick="sendQuickMessage('Di mana posisinya?')" class="px-3.5 py-1.5 bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex-shrink-0">
+          Di mana posisinya?
+        </button>
+        <button onclick="sendQuickMessage('Saya sudah di lokasi')" class="px-3.5 py-1.5 bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex-shrink-0">
+          Saya sudah di lokasi
+        </button>
+        <button onclick="sendQuickMessage('Tolong hubungi saya')" class="px-3.5 py-1.5 bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex-shrink-0">
+          Tolong hubungi saya
+        </button>
+        <button onclick="sendQuickMessage('Berapa menit lagi ya?')" class="px-3.5 py-1.5 bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 rounded-full hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex-shrink-0">
+          Berapa menit lagi?
+        </button>
+      </div>
+
+      <!-- Input box area -->
+      <div class="p-3 bg-white border-t border-gray-100 flex gap-2 items-center flex-shrink-0">
+        <input type="text" id="chat-input" placeholder="Tulis pesan..." 
+          class="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all text-gray-800 placeholder-gray-400"
+          onkeypress="handleChatKeyPress(event)" />
+        <button onclick="sendMessage()" 
+          class="p-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 hover:scale-[1.03] active:scale-[0.97]        icon: `<svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>`,
+        iconSm: `<svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>`,
+        technicians: [
+          { name: 'Dedi Kurniawan', rating: '4.8 (142 ulasan)', cert: 'Spesialis Ban • 4 th pengalaman', eta: 7, dist: 1.8, vehicle: 'Suzuki Nex • BK 9182 BB' },
+          { name: 'Eko Prasetyo', rating: '4.7 (98 ulasan)', cert: 'Teknisi Terverifikasi • 3 th pengalaman', eta: 15, dist: 4.1, vehicle: 'Honda Beat • BK 7234 SA' },
+        ],
+        tips: ['Jangan coba perbaiki ban sendiri di pinggir jalan ramai', 'Pasang segitiga pengaman 10–15 meter di belakang kendaraan', 'Jaga jarak aman dari kendaraan lain'],
+      },
+      bensin: {
+        title: 'Kehabisan Bensin',
+        desc: 'Kami antar bahan bakar langsung to titik lokasi Anda.',
+        iconColor: '#e65100',
+        bgColor: '#fff3e0',
+        gradient: 'linear-gradient(135deg,#fb8c00,#e65100)',
+        icon: `<svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h2l1 2m0 0l1.5 4H17l1.5-4H6m0 0H3m14 4v2m-8-2v2M5 20h14M7 16H5v-4h2m10 4h2v-4h-2M9 10h6"/></svg>`,
+        iconSm: `<svg class="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h2l1 2m0 0l1.5 4H17l1.5-4H6m0 0H3m14 4v2m-8-2v2M5 20h14M7 16H5v-4h2m10 4h2v-4h-2M9 10h6"/></svg>`,
+        technicians: [
+          { name: 'Fajar Nugroho', rating: '4.9 (321 ulasan)', cert: 'Pengiriman BBM • 6 th pengalaman', eta: 9, dist: 2.5, vehicle: 'Vespa Sprint • B 1823 KJA' },
+          { name: 'Gunawan Hadi', rating: '4.8 (210 ulasan)', cert: 'Driver Terverifikasi • 4 th pengalaman', eta: 14, dist: 3.8, vehicle: 'Honda PCX • BK 3921 MA' },
+        ],
+        tips: ['Nyalakan lampu hazard dan pindah ke bahu jalan', 'Hubungi kami segera, tim kami siap 24 jam', 'Jangan tinggalkan kendaraan sendirian di malam hari'],
+      },
+      mesin: {
+        title: 'Kerusakan Mesin',
+        desc: 'Masalah teknis mesin ditangani teknisi bersertifikat di lokasi.',
+        iconColor: '#283593',
+        bgColor: '#e8eaf6',
+        gradient: 'linear-gradient(135deg,#3949ab,#1a237e)',
+        icon: `<svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,
+        iconSm: `<svg class="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,
+        technicians: [
+          { name: 'Hendra Wijaya', rating: '5.0 (412 ulasan)', cert: 'Mekanik Senior • 10 th pengalaman', eta: 11, dist: 2.8, vehicle: 'Yamaha Aerox • BK 5671 PL' },
+          { name: 'Irfan Suwandi', rating: '4.9 (289 ulasan)', cert: 'Mekanik Bersertifikat • 8 th pengalaman', eta: 16, dist: 4.2, vehicle: 'Honda Supra • BK 8711 WA' },
+        ],
+        tips: ['Matikan mesin segera jika ada asap atau suara aneh', 'Jangan mencoba memperbaiki mesin sendiri tanpa alat', 'Pastikan kendaraan dalam posisi aman sebelum teknisi tiba'],
+      },
+    };
+
+    // ── ORDER SOURCE OF TRUTH STATE ──────────────────────────────
+    const order = {
+      state: 'INITIAL', // INITIAL, SEARCHING_TECHNICIAN, TECHNICIAN_FOUND, TECHNICIAN_ACCEPTED, TECHNICIAN_ON_THE_WAY, TECHNICIAN_ARRIVED, SERVICE_IN_PROGRESS, SERVICE_COMPLETED, ORDER_CANCELLED
+      serviceKey: 'mogok',
+      serviceTitle: 'Bantuan Kendaraan Mogok',
+      cost: 75000,
+      duration: 0,
+      notes: '',
+      startTime: null,
+      timerInterval: null,
+      technician: null,
+      tracking: {
+        eta: 10,
+        distance: 2.3,
+        speed: 40,
+        techCoords: null,
+        customerCoords: null
+      }
+    };
+
+    const ADMIN_WHATSAPP_NUMBER = '6281234567890';
+    let currentServiceKey = 'mogok';
+    let currentService = null;
+    let userCoords = null; // { lat, lng }
+    let assignedTechnician = null;
+    let locationDetected = false;
+    let isSheetExpanded = false;
+    
+    // Leaflet Variables
+    let map = null;
+    let userMarker = null;
+    let techMarker = null;
+    let routeRemainingLine = null;
+    let routeTraveledLine = null;
+    let routePoints = [];
+    
+    // RealTimeSync
+    const sync = new RealTimeSync();
+    
+    // Timeouts and Intervals
+    let localFallbackTimeout = null;
+    let searchMsgInterval = null;
+    let localSimulationInterval = null;
+    let watchId = null;
+    
+    // Leaflet Variables
+    let map = null;
+    let userMarker = null;
+    let techMarker = null;
+    let routeRemainingLine = null;
+    let routeTraveledLine = null;
+    let routePoints = [];
+    
+    // RealTimeSync
+    const sync = new RealTimeSync();
+    
+    // Timeouts and Intervals
+    let localFallbackTimeout = null;
+    let searchMsgInterval = null;
+    let localSimulationInterval = null;
+    let watchId = null;
+
+    // ── INIT ─────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
+      const params = new URLSearchParams(window.location.search);
+      currentServiceKey = params.get('service') || 'mogok';
+      currentService = SERVICES[currentServiceKey] || SERVICES.mogok;
+
+      applyServiceTheme(currentServiceKey);
+      requestLocation();
+      setStep1Time();
+      loadTips();
+      setupSyncListeners();
+
+      const chatInitialTime = document.getElementById('chat-initial-time');
+      if (chatInitialTime) {
+        chatInitialTime.textContent = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      }
+    });
+
+    function applyServiceTheme(key) {
+      const svc = SERVICES[key] || SERVICES.mogok;
+      document.getElementById('svc-icon-header').style.background = svc.bgColor;
+      document.getElementById('svc-icon-header').innerHTML = svc.iconSm;
+      document.getElementById('svc-title-header').textContent = svc.title;
+      document.getElementById('svc-banner-inner').style.background = svc.gradient;
+      document.getElementById('svc-icon-lg').innerHTML = svc.icon;
+      document.getElementById('svc-title-main').textContent = svc.title;
+      document.getElementById('svc-desc-main').textContent = svc.desc;
+      document.getElementById('svc-request-badge').style.background = svc.bgColor;
+      document.getElementById('svc-req-icon').innerHTML = svc.iconSm;
+      document.getElementById('svc-req-icon').style.background = 'white';
+      document.getElementById('svc-req-name').textContent = svc.title;
+      document.getElementById('chat-tech-name').textContent = svc.technicians[0].name;
+      document.title = svc.title + ' – Siaga Darurat';
+    }
+
+    function loadTips() {
+      if (!currentService) return;
+      const container = document.getElementById('tips-content');
+      container.innerHTML = currentService.tips.map(tip => `
+        <div class="flex items-start gap-2.5">
+          <div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style="background:#ffebee">
+            <svg class="w-3 h-3" style="color:#e53935" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <span class="text-xs text-gray-600 leading-relaxed">${tip}</span>
+        </div>
+      `).join('');
+    }
+
+    function requestLocation() {
+      document.getElementById('loc-loading').style.display = 'flex';
+      document.getElementById('loc-success').classList.add('hidden');
+      document.getElementById('loc-denied').classList.add('hidden');
+
+      if (!navigator.geolocation) {
+        showLocationDenied();
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          initLeafletMap(userCoords);
+          reverseGeocode(userCoords);
+          startWatchingLocation();
+        },
+        (err) => {
+          console.warn('getCurrentPosition error:', err);
+          showLocationDenied();
+          userCoords = { lat: 2.9595, lng: 99.0687 };
+          initLeafletMap(userCoords);
+          reverseGeocode(userCoords);
+        },
+        { timeout: 8000, enableHighAccuracy: true }
+      );
+    }
+
+    function startWatchingLocation() {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          locationDetected = true;
+          if (userMarker) userMarker.setLatLng([userCoords.lat, userCoords.lng]);
+          
+          if (order.state === 'TECHNICIAN_ON_THE_WAY') {
+            sync.send('customer_location_update', { customerCoords: userCoords });
+            recalculateRoute(order.tracking.techCoords);
+          }
+        },
+        (err) => console.warn('watchPosition error:', err),
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+    }
+
+    function initLeafletMap(coords) {
+      if (map) return;
+      document.getElementById('map-overlay').style.display = 'none';
+      document.getElementById('btn-recenter').style.display = 'flex';
+
+      map = L.map('leaflet-map', { zoomControl: false, attributionControl: false }).setView([coords.lat, coords.lng], 15);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19 }).addTo(map);
+
+      const userIcon = L.divIcon({
+        className: '',
+        html: `
+          <div class="relative flex items-center justify-center" style="width:40px;height:40px;">
+            <div class="user-ping" style="width:40px;height:40px;"></div>
+            <div class="user-ping user-ping-2" style="width:40px;height:40px;"></div>
+            <div class="rounded-full border-2 border-white flex items-center justify-center pulse-user"
+              style="width:32px;height:32px;background:#e53935;box-shadow:0 3px 12px rgba(229,57,53,0.5);">
+              <svg fill="currentColor" viewBox="0 0 24 24" style="width:14px;height:14px;color:white;">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+              </svg>
+            </div>
+          </div>`,
+        iconSize: [40, 40], iconAnchor: [20, 20]
+      });
+      userMarker = L.marker([coords.lat, coords.lng], { icon: userIcon }).addTo(map);
+    }
+
+    function recenterMap() {
+      if (map && userCoords) map.setView([userCoords.lat, userCoords.lng], 16, { animate: true });
+    }
+
+    function invalidateMap() {
+      if (map) setTimeout(() => map.invalidateSize({ animate: true }), 150);
+    }
+
+    function reverseGeocode(coords) {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&zoom=18&addressdetails=1`;
+      fetch(url, { headers: { 'Accept-Language': 'id', 'User-Agent': 'SiagaDaruratApp/1.0' } })
+      .then(res => res.json())
+      .then(data => {
+        let address = '';
+        if (data.address) {
+          const road = data.address.road || data.address.suburb || '';
+          const city = data.address.city || data.address.town || '';
+          address = road ? `${road}, ${city}` : city;
+        }
+        if (!address) address = data.display_name ? data.display_name.split(',').slice(0, 2).join(',') : `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+        
+        document.getElementById('loc-loading').style.display = 'none';
+        const successEl = document.getElementById('loc-success');
+        successEl.classList.remove('hidden');
+        successEl.classList.add('visible');
+        document.getElementById('loc-address').textContent = address;
+        document.getElementById('loc-coords').textContent = `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+        locationDetected = true;
+      })
+      .catch(err => {
+        const address = coords.lat.toFixed(4) === '2.9595' ? 'Jl. Merdeka No. 4, Pematang Siantar' : 'Jl. Sudirman, Jakarta';
+        document.getElementById('loc-loading').style.display = 'none';
+        document.getElementById('loc-success').classList.remove('hidden');
+        document.getElementById('loc-success').classList.add('visible');
+        document.getElementById('loc-address').textContent = address;
+        document.getElementById('loc-coords').textContent = `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+        locationDetected = true;
+      });
+    }
+
+    // ── STATE MACHINE ENGINE ─────────────────────────────────────
+    function setOrderState(newState) {
+      console.log(`State transition: ${order.state} -> ${newState}`);
+      order.state = newState;
+      sync.send('order_state_update', { state: newState, order: order });
+      pushStateToBackend(newState, newState === 'SERVICE_COMPLETED' ? { cost: order.cost, durationSeconds: order.duration } : null);
+      clearAllIntervals();
+
+      switch (newState) {
+        case 'INITIAL': resetToSearchMode(); break;
+        case 'SEARCHING_TECHNICIAN': 
+          order.startTime = null; order.duration = 0; runSearchingSimulation(); break;
+        case 'TECHNICIAN_FOUND':
+          order.technician = {
+            name: currentService.technicians[0].name,
+            photo: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?auto=format&fit=crop&q=80&w=256',
+            rating: '4.9', reviewsCount: 284, vehicle: currentService.technicians[0].vehicle,
+            phone: '+6281234567890', whatsapp: 'https://wa.me/6281234567890'
+          };
+          assignedTechnician = order.technician;
+          assignedTechnician.dist = currentService.technicians[0].dist;
+          assignedTechnician.eta = currentService.technicians[0].eta;
+          const avatar = document.getElementById('tech-avatar');
+          if (avatar) avatar.innerHTML = `<img src="${order.technician.photo}" alt="${order.technician.name}" class="w-full h-full object-cover rounded-2xl">`;
+          showToast(`Teknisi Ditemukan: ${order.technician.name}!`, 'success', 4000);
+          setTimeout(() => setOrderState('TECHNICIAN_ACCEPTED'), 1500);
+          break;
+        case 'TECHNICIAN_ACCEPTED':
+          const startCoords = { lat: userCoords.lat + 0.006, lng: userCoords.lng - 0.005 };
+          order.tracking.techCoords = startCoords;
+          order.tracking.customerCoords = userCoords;
+          order.tracking.distance = assignedTechnician.dist;
+          order.tracking.eta = assignedTechnician.eta;
+          order.tracking.speed = 35;
+          recalculateRoute(startCoords);
+          showToast('Teknisi menerima pesanan dan bersiap berangkat!', 'success', 3000);
+          startBackendChatPolling();
+          startBackendLocationPush();
+          setTimeout(() => setOrderState('TECHNICIAN_ON_THE_WAY'), 1500);
+          break;
+        case 'TECHNICIAN_ON_THE_WAY': runLiveTrackingSimulation(); break;
+        case 'TECHNICIAN_ARRIVED':
+          order.tracking.distance = 0; order.tracking.eta = 0; order.tracking.speed = 0;
+          if (techMarker) {
+            techMarker.setLatLng([userCoords.lat, userCoords.lng]);
+            const circle = document.getElementById('tech-marker-circle');
+            if (circle) { 
+              circle.className = 'tech-arrived rounded-full border-2 border-white flex items-center justify-center';
+              circle.style.background = '#16a34a'; 
+            }
+            const arrow = circle ? circle.querySelector('.tech-arrow') : null;
+            if (arrow) arrow.style.display = 'none';
+          }
+          if (routeRemainingLine) map.removeLayer(routeRemainingLine);
+          showToast('Teknisi telah tiba di lokasi Anda! 🛵', 'success', 5000);
+          break;
+        case 'SERVICE_IN_PROGRESS':
+          if (map && userCoords) map.setView([userCoords.lat, userCoords.lng], 17, { animate: true });
+          order.startTime = Date.now(); order.duration = 0;
+          order.timerInterval = setInterval(() => { order.duration = Math.floor((Date.now() - order.startTime) / 1000); updateTimerUI(); }, 1000);
+          showToast('Pengerjaan layanan dimulai!', 'info');
+          break;
+        case 'SERVICE_COMPLETED': showReceiptSummary(); stopAllBackendPolling(); break;
+        case 'ORDER_CANCELLED':
+          if (techMarker) { map.removeLayer(techMarker); techMarker = null; }
+          if (routeRemainingLine) map.removeLayer(routeRemainingLine);
+          if (routeTraveledLine) map.removeLayer(routeTraveledLine);
+          const cancelledOverlay = document.getElementById('cancelled-overlay');
+          if (cancelledOverlay) cancelledOverlay.classList.remove('hidden');
+          stopAllBackendPolling();
+          break;
+      }
+      renderOrderState();
+      invalidateMap();
+    }
+
+    function renderOrderState() {
+      const state = order.state;
+      if (['TECHNICIAN_ON_THE_WAY', 'TECHNICIAN_ARRIVED', 'SERVICE_IN_PROGRESS'].includes(state)) document.body.classList.add('tracking-view');
+      else document.body.classList.remove('tracking-view');
+
+      const btnBack = document.getElementById('btn-back');
+      if (btnBack) btnBack.style.display = ['SEARCHING_TECHNICIAN', 'TECHNICIAN_ON_THE_WAY', 'SERVICE_IN_PROGRESS'].includes(state) ? 'none' : 'flex';
+      
+      const searchingState = document.getElementById('searching-state');
+      if (searchingState) searchingState.className = (state === 'SEARCHING_TECHNICIAN') ? 'fixed inset-0 z-[150] bg-white flex flex-col items-center justify-center p-6' : 'hidden';
+      
+      const techSection = document.getElementById('tech-section');
+      if (techSection) techSection.className = ['TECHNICIAN_FOUND', 'TECHNICIAN_ACCEPTED', 'TECHNICIAN_ON_THE_WAY', 'TECHNICIAN_ARRIVED', 'SERVICE_IN_PROGRESS'].includes(state) ? 'fixed bottom-0 w-full z-[120] p-4 bg-white/95 backdrop-blur-md rounded-t-3xl shadow-2xl' : 'hidden';
+
+      const journeyCard = document.getElementById('tech-journey-card');
+      if (journeyCard) {
+        if (state === 'TECHNICIAN_ON_THE_WAY') {
+            journeyCard.classList.remove('hidden');
+            setTimeout(() => { journeyCard.classList.remove('opacity-0', '-translate-y-4'); journeyCard.classList.add('opacity-100', 'translate-y-0'); }, 50);
+        } else journeyCard.classList.add('hidden');
+      }
+
+      if (order.technician) {
+        document.getElementById('tech-name').textContent = order.technician.name;
+        document.getElementById('chat-tech-name').textContent = order.technician.name;
+        document.getElementById('rating-tech-name').textContent = order.technician.name;
+        document.getElementById('tech-vehicle').textContent = order.technician.vehicle;
+      }
+
+      const etaVal = document.getElementById('tech-eta-val');
+      const distVal = document.getElementById('tech-dist-val');
+      const speedVal = document.getElementById('speed-val');
+      const mapDistChip = document.getElementById('map-dist-chip');
+      const mapStatusText = document.getElementById('map-status-text');
+
+      if (etaVal) etaVal.textContent = state === 'TECHNICIAN_ARRIVED' ? '0' : Math.ceil(order.tracking.eta);
+      if (distVal) distVal.textContent = order.tracking.distance.toFixed(1);
+      if (speedVal) speedVal.textContent = `${Math.round(order.tracking.speed)} km/h`;
+      if (mapDistChip) mapDistChip.textContent = state === 'TECHNICIAN_ARRIVED' ? 'Tiba' : `${order.tracking.distance.toFixed(1)} km`;
+      
+      if (mapStatusText) {
+        if (state === 'TECHNICIAN_ON_THE_WAY') {
+          mapStatusText.textContent = `Teknisi sedang menuju lokasi Anda (ETA: ${Math.ceil(order.tracking.eta)} m)`;
+        } else if (state === 'TECHNICIAN_ARRIVED') {
+          mapStatusText.textContent = 'Teknisi tiba!';
+        } else if (state === 'SERVICE_IN_PROGRESS') {
+          mapStatusText.textContent = 'Layanan sedang berlangsung...';
+        }
+      }
+
+      const statusTextBox = document.getElementById('tech-status-text');
+      const actionButtonsGrid = document.getElementById('action-buttons-grid');
+
+      if (state === 'TECHNICIAN_FOUND' || state === 'TECHNICIAN_ACCEPTED') {
+          if (statusTextBox) { statusTextBox.textContent = 'Menghubungkan dengan teknisi...'; statusTextBox.parentElement.className = "flex items-center gap-2 p-3 rounded-xl mb-4 text-blue-800 bg-blue-50"; }
+          if (actionButtonsGrid) {
+              actionButtonsGrid.className = "grid grid-cols-4 gap-2";
+              actionButtonsGrid.innerHTML = `
+                <button disabled class="py-2.5 rounded-xl font-bold text-[10px] bg-gray-100 text-gray-400 cursor-not-allowed">WA</button>
+                <button disabled class="py-2.5 rounded-xl font-bold text-[10px] bg-gray-100 text-gray-400 cursor-not-allowed">Telp</button>
+                <button disabled class="py-2.5 rounded-xl font-bold text-[10px] bg-gray-100 text-gray-400 cursor-not-allowed">Chat</button>
+                <button disabled class="py-2.5 rounded-xl font-bold text-[10px] bg-gray-100 text-gray-400 cursor-not-allowed">Batal</button>
+              `;
+          }
+      } else if (state === 'TECHNICIAN_ON_THE_WAY') {
+          if (statusTextBox) { statusTextBox.textContent = 'Teknisi sedang menuju lokasi Anda'; statusTextBox.parentElement.className = "flex items-center gap-2 p-3 rounded-xl mb-4 text-orange-800 bg-orange-50"; }
+          if (actionButtonsGrid) {
+            actionButtonsGrid.className = "grid grid-cols-4 gap-2";
+            actionButtonsGrid.innerHTML = `
+              <button onclick="whatsappTechnician()" class="py-2.5 rounded-xl font-bold text-[10px] bg-green-50 hover:bg-green-100 text-green-800 transition-all flex items-center justify-center gap-1">WA</button>
+              <button onclick="callTechnician()" class="py-2.5 rounded-xl font-bold text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-800 transition-all flex items-center justify-center gap-1">Telp</button>
+              <button onclick="openChat()" class="py-2.5 rounded-xl font-bold text-[10px] bg-purple-50 hover:bg-purple-100 text-purple-800 transition-all flex items-center justify-center gap-1">Chat</button>
+              <button onclick="cancelService()" class="py-2.5 rounded-xl font-bold text-[10px] bg-red-50 hover:bg-red-100 text-red-800 transition-all flex items-center justify-center gap-1">Batal</button>
+            `;
+          }
+      } else if (state === 'TECHNICIAN_ARRIVED') {
+          if (statusTextBox) { statusTextBox.textContent = 'Teknisi telah tiba di lokasi Anda'; statusTextBox.parentElement.className = "flex items-center gap-2 p-3 rounded-xl mb-4 text-green-800 bg-green-50"; }
+          if (actionButtonsGrid) {
+              actionButtonsGrid.className = "flex flex-col gap-2";
+              actionButtonsGrid.innerHTML = `
+                <button onclick="setOrderState('SERVICE_IN_PROGRESS')" class="w-full py-3.5 rounded-xl font-extrabold text-sm text-white bg-green-600 hover:bg-green-700 transition-all shadow-lg shadow-green-600/20">Mulai Layanan (Start Service)</button>
+                <div class="grid grid-cols-3 gap-2">
+                  <button onclick="whatsappTechnician()" class="py-2 rounded-xl font-bold text-[10px] bg-green-50 text-green-800">WA</button>
+                  <button onclick="callTechnician()" class="py-2 rounded-xl font-bold text-[10px] bg-blue-50 text-blue-800">Telp</button>
+                  <button onclick="openChat()" class="py-2 rounded-xl font-bold text-[10px] bg-purple-50 text-purple-800">Chat</button>
+                </div>
+              `;
+          }
+      } else if (state === 'SERVICE_IN_PROGRESS') {
+          if (statusTextBox) { statusTextBox.textContent = 'Pengerjaan layanan sedang berlangsung'; statusTextBox.parentElement.className = "flex items-center gap-2 p-3 rounded-xl mb-4 text-emerald-800 bg-emerald-50"; }
+          if (actionButtonsGrid) {
+              actionButtonsGrid.className = "flex flex-col gap-2";
+              actionButtonsGrid.innerHTML = `
+                <button onclick="setOrderState('SERVICE_COMPLETED')" class="w-full py-3.5 rounded-xl font-extrabold text-sm text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-1">
+                  Selesaikan Pekerjaan
+                </button>
+                <div class="grid grid-cols-2 gap-2">
+                  <button onclick="callTechnician()" class="py-2 rounded-xl font-bold text-xs bg-blue-50 text-blue-800">Telepon</button>
+                  <button onclick="openChat()" class="py-2 rounded-xl font-bold text-xs bg-purple-50 text-purple-800">Chat</button>
+                </div>
+              `;
+          }
+      }
+      
+      updateStepsTimeline(state);
+      updateStatsGrid(state);
+    }
+
+    function updateStepsTimeline(state) {
+      const container = document.getElementById('status-steps');
+      if (!container) return;
+      
+      const steps = [
+        { label: 'Permintaan diterima', desc: 'Pesanan Anda telah masuk ke sistem', states: ['TECHNICIAN_FOUND', 'TECHNICIAN_ACCEPTED', 'TECHNICIAN_ON_THE_WAY', 'TECHNICIAN_ARRIVED', 'SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'] },
+        { label: 'Teknisi dikonfirmasi', desc: 'Teknisi telah ditugaskan', states: ['TECHNICIAN_ACCEPTED', 'TECHNICIAN_ON_THE_WAY', 'TECHNICIAN_ARRIVED', 'SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'] },
+        { label: 'Dalam perjalanan', desc: 'Teknisi sedang berkendara menuju lokasi Anda', states: ['TECHNICIAN_ARRIVED', 'SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'] },
+        { label: 'Tiba di lokasi', desc: 'Teknisi telah sampai di lokasi Anda', states: ['SERVICE_IN_PROGRESS', 'SERVICE_COMPLETED'] },
+        { label: 'Layanan berlangsung', desc: 'Teknisi sedang mengerjakan perbaikan', states: ['SERVICE_COMPLETED'] }
+      ];
+      
+      let html = '';
+      steps.forEach((step, idx) => {
+        const isCompleted = step.states.includes(state);
+        const isActive = (idx === 0 && state === 'SEARCHING_TECHNICIAN') ||
+                         (idx === 1 && state === 'TECHNICIAN_FOUND') ||
+                         (idx === 2 && state === 'TECHNICIAN_ON_THE_WAY') ||
+                         (idx === 3 && state === 'TECHNICIAN_ARRIVED') ||
+                         (idx === 4 && state === 'SERVICE_IN_PROGRESS');
+        
+        let iconClass = 'bg-gray-200 text-gray-400 dark:bg-slate-800';
+        let iconHtml = '';
+        let textOpacityClass = 'opacity-50';
+        
+        if (isCompleted) {
+          iconClass = 'bg-green-500 text-white';
+          iconHtml = `<svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
+          textOpacityClass = '';
+        } else if (isActive) {
+          iconClass = 'bg-red-600 text-white animate-pulse';
+          iconHtml = `<span class="w-1.5 h-1.5 rounded-full bg-white"></span>`;
+          textOpacityClass = 'font-bold';
+        } else {
+          iconHtml = `<span class="text-[9px] font-bold text-gray-400">${idx + 1}</span>`;
+        }
+        
+        html += `
+          <div class="flex items-start gap-3 ${textOpacityClass}">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${iconClass}">
+              ${iconHtml}
+            </div>
+            <div class="flex-1">
+              <div class="text-[11px] font-bold">${step.label}</div>
+              <div class="text-[9px] text-gray-400 dark:text-slate-500">${step.desc}</div>
+            </div>
+          </div>
+        `;
+      });
+      
+      container.innerHTML = html;
+    }
+
+    function updateStatsGrid(state) {
+      const grid = document.getElementById('tech-stats-grid');
+      if (!grid) return;
+      
+      if (state === 'SERVICE_IN_PROGRESS') {
+        grid.innerHTML = `
+          <div class="col-span-3 rounded-2xl p-4 text-center bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 flex flex-col items-center justify-center gap-1 shadow-inner">
+            <div class="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Waktu Pengerjaan</div>
+            <div id="service-timer-display" class="text-3xl font-black text-emerald-700 dark:text-emerald-400 tracking-widest font-mono">00:00</div>
+          </div>
+        `;
+      } else {
+        const eta = state === 'TECHNICIAN_ARRIVED' ? '0' : Math.ceil(order.tracking.eta);
+        const dist = order.tracking.distance.toFixed(1);
+        grid.innerHTML = `
+          <div class="rounded-xl p-3 text-center" style="background:#ffebee">
+            <div class="text-base font-extrabold eta-count" id="tech-eta-val">${eta}</div>
+            <div class="text-[10px] text-gray-500 font-medium">menit ETA</div>
+          </div>
+          <div class="rounded-xl p-3 text-center bg-blue-50">
+            <div class="text-base font-extrabold text-blue-600" id="tech-dist-val">${dist}</div>
+            <div class="text-[10px] text-gray-500 font-medium">km jarak</div>
+          </div>
+          <div class="rounded-xl p-3 text-center bg-green-50">
+            <div class="text-base font-extrabold text-green-600">★ 4.9</div>
+            <div class="text-[10px] text-gray-500 font-medium">rating</div>
+          </div>
+        `;
+      }
+    }
+
+    function updateTimerUI() {
+      const display = document.getElementById('service-timer-display');
+      if (display) display.textContent = formatTimer(order.duration);
+    }
+
+    function formatTimer(secs) {
+      const m = Math.floor(secs / 60).toString().padStart(2, '0');
+      const s = (secs % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function formatTimerDesc(secs) {
+      const m = Math.floor(secs / 60); const s = secs % 60;
+      return m > 0 ? `${m} menit ${s} detik` : `${s} detik`;
+    }
+
+    function getReadableState(state) {
+      switch(state) {
+        case 'SEARCHING_TECHNICIAN': return 'Mencari teknisi terdekat';
+        case 'TECHNICIAN_FOUND': return 'Teknisi ditemukan';
+        case 'TECHNICIAN_ACCEPTED': return 'Teknisi menerima pesanan';
+        case 'TECHNICIAN_ON_THE_WAY': return 'Teknisi sedang menuju lokasi';
+        case 'TECHNICIAN_ARRIVED': return 'Teknisi tiba';
+        case 'SERVICE_IN_PROGRESS': return 'Layanan sedang berlangsung';
+        case 'SERVICE_COMPLETED': return 'Layanan selesai';
+        case 'ORDER_CANCELLED': return 'Pesanan dibatalkan';
+        default: return 'Menunggu pemesanan';
+      }
+    }
+
+    function runSearchingSimulation() {
+      const steps = [document.getElementById('search-step-1'), document.getElementById('search-step-2'), document.getElementById('search-step-3'), document.getElementById('search-step-4')];
+      setSearchStepActive(steps[0], "Memindai teknisi aktif di sekitar Anda...");
+      let currentStep = 1;
+      searchMsgInterval = setInterval(() => {
+        currentStep++;
+        if (currentStep <= 4) {
+          setSearchStepComplete(steps[currentStep-2]);
+          setSearchStepActive(steps[currentStep-1], currentStep === 2 ? "Mencocokkan teknisi..." : (currentStep === 3 ? "Teknisi ditemukan!" : "Menghubungi teknisi..."));
+        } else {
+          clearInterval(searchMsgInterval);
+          setOrderState('TECHNICIAN_FOUND');
+        }
+      }, 1500);
+    }
+
+    function setSearchStepComplete(stepEl) {
+      if (!stepEl) return;
+      stepEl.classList.remove('opacity-40');
+      const icon = stepEl.querySelector('div');
+      if (icon) { icon.className = "w-5 h-5 rounded-full flex items-center justify-center bg-green-500 text-white"; icon.innerHTML = "✓"; }
+    }
+
+    function setSearchStepActive(stepEl, text) {
+      if (!stepEl) return;
+      stepEl.classList.remove('opacity-40');
+      const icon = stepEl.querySelector('div');
+      if (icon) icon.className = "w-5 h-5 rounded-full flex items-center justify-center bg-blue-500 text-white animate-pulse";
+      const titleEl = document.getElementById('search-status-text');
+      if (titleEl) titleEl.textContent = text;
+    }
+
+    function runLiveTrackingSimulation() {
+      if (!userCoords || !order.tracking.techCoords) return;
+      const startCoords = order.tracking.techCoords;
+      const url = `https://router.project-osrm.org/route/v1/driving/${startCoords.lng},${startCoords.lat};${userCoords.lng},${userCoords.lat}?geometries=geojson&overview=full`;
+      
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.routes || !data.routes.length) throw new Error("No route");
+          const rawCoords = data.routes[0].geometry.coordinates.map(p => ({ lat: p[1], lng: p[0] }));
+          startSimulationWithCoords(rawCoords);
+        })
+        .catch(err => {
+          console.warn("OSRM Router failed, using linear fallback route:", err);
+          const rawCoords = [];
+          const steps = 15;
+          for (let i = 0; i <= steps; i++) {
+            const ratio = i / steps;
+            rawCoords.push({
+              lat: startCoords.lat + (userCoords.lat - startCoords.lat) * ratio,
+              lng: startCoords.lng + (userCoords.lng - startCoords.lng) * ratio
+            });
+          }
+          startSimulationWithCoords(rawCoords);
+        });
+    }
+
+    function startSimulationWithCoords(rawCoords) {
+      let currentIdx = 0;
+      localSimulationInterval = setInterval(() => {
+        if (order.state !== 'TECHNICIAN_ON_THE_WAY') { clearInterval(localSimulationInterval); return; }
+        if (currentIdx >= rawCoords.length) { clearInterval(localSimulationInterval); setOrderState('TECHNICIAN_ARRIVED'); return; }
+        
+        const curr = rawCoords[currentIdx];
+        updateTechMarker(curr, calculateBearing(curr, rawCoords[Math.min(currentIdx + 1, rawCoords.length - 1)]));
+        splitRouteLine(curr);
+        
+        const fraction = currentIdx / (rawCoords.length - 1);
+        order.tracking.techCoords = curr;
+        order.tracking.distance = assignedTechnician.dist * (1 - fraction);
+        order.tracking.eta = (order.tracking.distance / 35) * 60;
+        
+        updateJourneyProgressBar(fraction);
+        renderOrderState();
+        currentIdx++;
+      }, 1000);
+    }
+
+    function updateJourneyProgressBar(fraction) {
+      const pct = Math.min(100, Math.round(fraction * 100));
+      const tripProgressLine = document.getElementById('trip-progress-line');
+      const riderWrapper = document.getElementById('rider-progress-wrapper');
+      const progressPctText = document.getElementById('journey-progress-pct');
+      
+      if (tripProgressLine) tripProgressLine.style.width = `${pct}%`;
+      if (riderWrapper) riderWrapper.style.left = `${pct}%`;
+      if (progressPctText) progressPctText.textContent = `${pct}%`;
+      
+      const progressBar = document.getElementById('progress-bar');
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      
+      const etaTotalDisplay = document.getElementById('eta-total-display');
+      if (etaTotalDisplay) etaTotalDisplay.textContent = order.state === 'TECHNICIAN_ARRIVED' ? 'Tiba' : `${Math.ceil(order.tracking.eta)} min`;
+    }
+
+    // ID order yang tersimpan di backend (null jika user belum login / API gagal,
+    // dalam hal ini fitur tetap berjalan sebagai simulasi visual seperti semula).
+    let backendOrderId = null;
+    let stopOrderPolling = null;
+    let stopChatPolling = null;
+    let stopLocationPush = null;
+    let lastSeenMessageCount = 0;
+    let backendTechAccepted = false;
+
+    async function requestTechnician() {
+      order.serviceKey = currentServiceKey; 
+      order.serviceTitle = currentService.title; 
+      order.notes = document.getElementById('notes-input').value.trim();
+
+      // Coba buat order nyata di server supaya muncul di dashboard teknisi sungguhan.
+      // Jika gagal (mis. belum login, atau server tidak terjangkau), fitur tetap
+      // berjalan sebagai simulasi visual murni seperti versi sebelumnya.
+      if (window.SiagaAPI && SiagaAPI.isLoggedIn()) {
+        try {
+          const created = await SiagaAPI.createOrder({
+            serviceKey: currentServiceKey,
+            serviceTitle: currentService.title,
+            notes: order.notes,
+            customerLat: userCoords ? userCoords.lat : null,
+            customerLng: userCoords ? userCoords.lng : null,
+            customerAddress: document.getElementById('loc-address') ? document.getElementById('loc-address').textContent : null
+          });
+          backendOrderId = created.id;
+          backendTechAccepted = false;
+          startBackendOrderPolling();
+        } catch (err) {
+          console.warn('Gagal membuat order di server, lanjut sebagai simulasi lokal:', err.message);
+          backendOrderId = null;
+        }
+      }
+
+      setOrderState('SEARCHING_TECHNICIAN');
+    }
+
+    // Polling ke server setiap 3 detik untuk tahu apakah ada teknisi SUNGGUHAN
+    // yang menerima order ini. Begitu diterima, kita pakai data teknisi asli
+    // (nama, kendaraan) menggantikan data dummy, lalu lanjut ke tahap berikutnya.
+    function startBackendOrderPolling() {
+      if (stopOrderPolling) stopOrderPolling();
+      stopOrderPolling = SiagaAPI.startPolling(async () => {
+        if (!backendOrderId) return;
+        const remote = await SiagaAPI.getOrder(backendOrderId);
+        if (!remote) return;
+
+        if (remote.state !== 'SEARCHING_TECHNICIAN' && remote.technician_id && !backendTechAccepted) {
+          backendTechAccepted = true;
+          const techName = [remote.technician_first_name, remote.technician_last_name].filter(Boolean).join(' ') || 'Teknisi';
+          order.technician = {
+            name: techName,
+            photo: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?auto=format&fit=crop&q=80&w=256',
+            rating: '4.9', reviewsCount: 284,
+            vehicle: remote.technician_vehicle || 'Honda Vario',
+            phone: remote.technician_phone || '+6281234567890',
+            whatsapp: 'https://wa.me/' + (remote.technician_phone || '6281234567890').replace(/[^0-9]/g, '')
+          };
+          assignedTechnician = order.technician;
+          assignedTechnician.dist = Number(remote.distance_km) || 1.4;
+          assignedTechnician.eta = Number(remote.eta_minutes) || 8;
+          if (remote.technician_lat && remote.technician_lng) {
+            order.tracking.techCoords = { lat: Number(remote.technician_lat), lng: Number(remote.technician_lng) };
+          }
+
+          // Hentikan simulasi pencarian dummy yang masih berjalan, langsung
+          // lompat ke tahap "teknisi ditemukan" memakai data asli di atas.
+          if (searchMsgInterval) clearInterval(searchMsgInterval);
+          if (order.state === 'SEARCHING_TECHNICIAN') setOrderState('TECHNICIAN_FOUND');
+        }
+
+        // Sinkronkan pembatalan dari sisi lain (jarang terjadi tapi untuk keamanan)
+        if (remote.state === 'ORDER_CANCELLED' && order.state !== 'ORDER_CANCELLED') {
+          setOrderState('ORDER_CANCELLED');
+        }
+      }, 3000);
+    }
+
+    // Setiap kali state berubah, beri tahu server (best-effort, tidak blocking UI).
+    function pushStateToBackend(state, extra) {
+      if (!backendOrderId || !window.SiagaAPI || !SiagaAPI.isLoggedIn()) return;
+      SiagaAPI.updateOrderState(backendOrderId, state, extra).catch(err => {
+        console.warn('Gagal sinkron status ke server:', err.message);
+      });
+    }
+
+    // Mulai polling chat dari teknisi (pesan yang dikirim lewat dashboard teknisi sungguhan)
+    function startBackendChatPolling() {
+      if (stopChatPolling) stopChatPolling();
+      lastSeenMessageCount = 0;
+      stopChatPolling = SiagaAPI.startPolling(async () => {
+        if (!backendOrderId) return;
+        const messages = await SiagaAPI.getMessages(backendOrderId);
+        if (messages.length > lastSeenMessageCount) {
+          const newOnes = messages.slice(lastSeenMessageCount);
+          newOnes.forEach(m => { if (m.sender === 'teknisi') receiveTechMessage(m.message); });
+          lastSeenMessageCount = messages.length;
+        }
+      }, 4000);
+    }
+
+    // Kirim lokasi pelanggan ke server tiap beberapa detik selama teknisi menuju lokasi,
+    // supaya bisa dipantau dari dashboard teknisi di device lain.
+    function startBackendLocationPush() {
+      if (stopLocationPush) stopLocationPush();
+      stopLocationPush = SiagaAPI.startPolling(async () => {
+        if (!backendOrderId || !userCoords) return;
+        if (!['TECHNICIAN_ON_THE_WAY', 'TECHNICIAN_ARRIVED'].includes(order.state)) return;
+        SiagaAPI.sendLocation(backendOrderId, { lat: userCoords.lat, lng: userCoords.lng }).catch(() => {});
+      }, 5000);
+    }
+
+    function stopAllBackendPolling() {
+      if (stopOrderPolling) { stopOrderPolling(); stopOrderPolling = null; }
+      if (stopChatPolling) { stopChatPolling(); stopChatPolling = null; }
+      if (stopLocationPush) { stopLocationPush(); stopLocationPush = null; }
+    }
+
+    function setupSyncListeners() {
+      sync.on('service_accept', (data) => {
+        if (order.state === 'SEARCHING_TECHNICIAN') {
+          order.technician = { name: data.techName, vehicle: data.vehicle || 'Honda Vario', phone: '+6281234567890' };
+          order.tracking.techCoords = data.techCoords; order.tracking.distance = data.distance || 1.4;
+          setOrderState('TECHNICIAN_FOUND');
+        }
+      });
+      sync.on('chat_msg', (data) => { if (data.sender === 'teknisi') receiveTechMessage(data.text); });
+      sync.on('service_cancel', () => { if (order.state !== 'ORDER_CANCELLED') setOrderState('ORDER_CANCELLED'); });
+    }
+
+    function calculateBearing(c1, c2) {
+      const dy = c2.lat - c1.lat;
+      const dx = Math.cos(Math.PI/180 * c1.lat) * (c2.lng - c1.lng);
+      return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    }
+
+    function recalculateRoute(techCoords) {
+      const url = `https://router.project-osrm.org/route/v1/driving/${techCoords.lng},${techCoords.lat};${userCoords.lng},${userCoords.lat}?geometries=geojson&overview=full`;
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.routes || !data.routes.length) throw new Error("No routes");
+          if (routeRemainingLine) map.removeLayer(routeRemainingLine);
+          routePoints = data.routes[0].geometry.coordinates.map(p => [p[1], p[0]]);
+          routeRemainingLine = L.polyline(routePoints, { color: currentService.iconColor || '#e53935', weight: 5, dashArray: '10, 6', className: 'route-dash' }).addTo(map);
+          map.fitBounds(L.latLngBounds([userCoords, techCoords]), { padding: [50, 50] });
+        })
+        .catch(err => {
+          console.warn("OSRM recalculateRoute failed, using linear route fallback:", err);
+          if (routeRemainingLine) map.removeLayer(routeRemainingLine);
+          routePoints = [
+            [techCoords.lat, techCoords.lng],
+            [userCoords.lat, userCoords.lng]
+          ];
+          routeRemainingLine = L.polyline(routePoints, { color: currentService.iconColor || '#e53935', weight: 5, dashArray: '10, 6', className: 'route-dash' }).addTo(map);
+          map.fitBounds(L.latLngBounds([userCoords, techCoords]), { padding: [50, 50] });
+        });
+    }
+
+    function splitRouteLine(currentCoords) {
+      if (!routePoints.length) return;
+      const remainingCoords = [[currentCoords.lat, currentCoords.lng], ...routePoints.slice(1)];
+      if (routeRemainingLine) routeRemainingLine.setLatLngs(remainingCoords);
+    }
+
+    function updateTechMarker(coords, bearing) {
+      if (!map) return;
+      if (!techMarker) {
+        const techIcon = L.divIcon({
+          className: 'tech-leaflet-icon',
+          html: `
+            <div class="relative flex items-center justify-center" style="width:40px;height:40px;">
+              <div id="tech-marker-circle" class="tech-glow rounded-full border-2 border-white flex items-center justify-center"
+                style="width:34px;height:34px;background:#1e88e5;box-shadow:0 3px 12px rgba(30,136,229,0.5);">
+                <span class="tech-arrow text-white text-xs transform font-black">🛵</span>
+              </div>
+            </div>`,
+          iconSize: [40, 40], iconAnchor: [20, 20]
+        });
+        techMarker = L.marker([coords.lat, coords.lng], { icon: techIcon }).addTo(map);
+      } else {
+        techMarker.setLatLng([coords.lat, coords.lng]);
+        const circle = document.getElementById('tech-marker-circle');
+        if (circle && order.state === 'TECHNICIAN_ON_THE_WAY') {
+          circle.className = 'tech-glow rounded-full border-2 border-white flex items-center justify-center';
+          circle.style.background = '#1e88e5';
+        }
+      }
+    }
+
+    function clearAllIntervals() {
+      if (localFallbackTimeout) clearTimeout(localFallbackTimeout);
+      if (searchMsgInterval) clearInterval(searchMsgInterval);
+      if (localSimulationInterval) clearInterval(localSimulationInterval);
+      if (order.timerInterval) clearInterval(order.timerInterval);
+    }
+
+    function resetToSearchMode() {
+      clearAllIntervals();
+      if (techMarker) { map.removeLayer(techMarker); techMarker = null; }
+      document.body.classList.remove('tracking-view');
+      document.getElementById('tech-section').classList.add('hidden');
+    }
+
+    function cancelService() {
+      if (confirm('Apakah Anda yakin ingin membatalkan pesanan bantuan kendaraan darurat ini?')) { 
+        setOrderState('ORDER_CANCELLED'); 
+        showToast('Pesanan dibatalkan.', 'info'); 
+      }
+    }
+
+    function showReceiptSummary() {
+      const formattedDuration = formatTimerDesc(order.duration);
+      const costString = `Rp ${order.cost.toLocaleString('id-ID')}`;
+      
+      const receiptServiceEl = document.getElementById('receipt-service');
+      const receiptDurationEl = document.getElementById('receipt-duration');
+      const receiptCostEl = document.getElementById('receipt-cost');
+      
+      if (receiptServiceEl) receiptServiceEl.textContent = order.serviceTitle;
+      if (receiptDurationEl) receiptDurationEl.textContent = formattedDuration;
+      if (receiptCostEl) receiptCostEl.textContent = costString;
+      
+      openRatingModal();
+    }
+
+    function whatsappTechnician() {
+      window.open(`https://wa.me/6281234567890`, '_blank');
+    }
+
+    function callTechnician() {
+      showToast('Menghubungi nomor teknisi (+6281234567890)...', 'success');
+    }
+
+    function openChat() {
+      document.getElementById('chat-modal').classList.remove('hidden');
+      const container = document.getElementById('chat-messages');
+      if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function closeChat() {
+      document.getElementById('chat-modal').classList.add('hidden');
+    }
+
+    function closeChatOutside(e) {
+      if (e.target === document.getElementById('chat-modal')) closeChat();
+    }
+
+    function handleChatKeyPress(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('chat-input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      
+      appendChatMessage(msg, 'user');
+      input.value = '';
+
+      // Simpan pesan ke server (agar teknisi sungguhan bisa melihatnya di dashboard),
+      // best-effort dan tidak mengganggu balasan dummy AI di bawah ini.
+      if (backendOrderId && window.SiagaAPI && SiagaAPI.isLoggedIn()) {
+        SiagaAPI.sendMessage(backendOrderId, msg).catch(err => console.warn('Gagal kirim chat ke server:', err.message));
+      }
+      
+      simulateAIResponse(msg);
+    }
+    
+    function sendQuickMessage(msg) {
+      appendChatMessage(msg, 'user');
+      simulateAIResponse(msg);
+    }
+    
+    function appendChatMessage(text, sender) {
+      const container = document.getElementById('chat-messages');
+      if (!container) return;
+      
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      
+      if (sender === 'user') {
+        container.innerHTML += `
+          <div class="flex gap-2 flex-row-reverse mb-3">
+            <div class="flex flex-col items-end max-w-[85%]">
+              <div class="bg-red-600 text-white chat-bubble-user px-3.5 py-2.5 rounded-2xl shadow-sm">
+                <p class="text-sm">${escapeHtml(text)}</p>
+              </div>
+              <div class="text-[9px] text-gray-400 mt-1 mr-1 text-right">${timeStr}</div>
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML += `
+          <div class="flex gap-2 mb-3">
+            <div class="w-7 h-7 rounded-full bg-blue-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+              <svg class="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+              </svg>
+            </div>
+            <div class="flex flex-col items-start max-w-[85%]">
+              <div class="bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-150 chat-bubble px-3.5 py-2.5 rounded-2xl rounded-tl-none shadow-sm">
+                <p class="text-sm">${escapeHtml(text)}</p>
+              </div>
+              <div class="text-[9px] text-gray-400 mt-1 ml-1">${timeStr}</div>
+            </div>
+          </div>
+        `;
+      }
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    function simulateAIResponse(userMsg) {
+      const indicator = document.getElementById('chat-typing-indicator');
+      if (indicator) indicator.classList.remove('hidden');
+      
+      const container = document.getElementById('chat-messages');
+      if (container) container.scrollTop = container.scrollHeight;
+      
+      setTimeout(() => {
+        if (indicator) indicator.classList.add('hidden');
+        
+        const responseText = getAIResponse(userMsg);
+        appendChatMessage(responseText, 'technician');
+        
+        sync.send('chat_msg', { sender: 'teknisi', text: responseText });
+      }, 1000 + Math.random() * 800);
+    }
+
+    function getAIResponse(userMessage) {
+      const msg = userMessage.toLowerCase();
+      
+      const techName = order.technician ? order.technician.name : 'Teknisi';
+      const etaMin = Math.ceil(order.tracking.eta);
+      const distance = order.tracking.distance.toFixed(1);
+      const state = order.state;
+      
+      if (msg.includes('mana') || msg.includes('posisi') || msg.includes('lokasi') || msg.includes('eta') || msg.includes('jarak') || msg.includes('sampai') || msg.includes('tiba') && (msg.includes('kapan') || msg.includes('berapa'))) {
+        if (state === 'SEARCHING_TECHNICIAN' || state === 'INITIAL') {
+          return 'Saya sedang mencari teknisi untuk Anda. Harap tunggu sebentar.';
+        } else if (state === 'TECHNICIAN_FOUND' || state === 'TECHNICIAN_ACCEPTED') {
+          return `Teknisi ${techName} telah ditemukan dan sedang bersiap menuju lokasi Anda.`;
+        } else if (state === 'TECHNICIAN_ON_THE_WAY') {
+          return `Saya sedang berkendara menuju lokasi Anda. Posisi saya berjarak sekitar ${distance} km lagi dengan perkiraan waktu tiba ${etaMin} menit.`;
+        } else if (state === 'TECHNICIAN_ARRIVED') {
+          return 'Saya sudah sampai di lokasi Anda! Silakan temui saya di titik penjemputan.';
+        } else if (state === 'SERVICE_IN_PROGRESS') {
+          return 'Saya sudah berada di lokasi Anda dan perbaikan sedang saya kerjakan.';
+        } else if (state === 'SERVICE_COMPLETED') {
+          return 'Layanan telah selesai dikerjakan. Terima kasih!';
+        }
+      }
+      
+      if (msg.includes('tiba') || msg.includes('sampai') || msg.includes('sudah di')) {
+        if (state === 'TECHNICIAN_ARRIVED') {
+          return 'Ya, saya sudah sampai di lokasi Anda. Silakan tekan tombol "Mulai Layanan" jika Anda sudah siap.';
+        } else if (state === 'SERVICE_IN_PROGRESS' || state === 'SERVICE_COMPLETED') {
+          return 'Ya, saya sudah sampai dan pengerjaan sedang/sudah dilakukan.';
+        } else if (state === 'TECHNICIAN_ON_THE_WAY') {
+          return `Belum sampai, saya masih dalam perjalanan. ETA saya sekitar ${etaMin} menit lagi.`;
+        } else {
+          return 'Belum sampai, pesanan Anda masih diproses.';
+        }
+      }
+      
+      if (msg.includes('status') || msg.includes('keadaan') || msg.includes('perkembangan')) {
+        const readableState = getReadableState(state);
+        if (state === 'TECHNICIAN_ON_THE_WAY') {
+          return `Status pesanan: ${readableState}. Jarak: ${distance} km, ETA: ${etaMin} menit.`;
+        } else if (state === 'SERVICE_IN_PROGRESS') {
+          return `Status pesanan: ${readableState}. Durasi pengerjaan saat ini: ${formatTimerDesc(order.duration)}.`;
+        } else {
+          return `Status pesanan Anda saat ini adalah: ${readableState}.`;
+        }
+      }
+      
+      if (msg.includes('batal') || msg.includes('cancel')) {
+        if (state === 'SERVICE_IN_PROGRESS' || state === 'SERVICE_COMPLETED') {
+          return 'Maaf, pesanan tidak dapat dibatalkan karena pengerjaan layanan sudah dimulai atau telah selesai.';
+        } else {
+          return 'Anda dapat membatalkan pesanan ini dengan menekan tombol "Batal" di halaman pelacakan.';
+        }
+      }
+      
+      if (msg.includes('halo') || msg.includes('hi') || msg.includes('p') || msg.includes('siang') || msg.includes('pagi') || msg.includes('sore') || msg.includes('malam')) {
+        return `Halo! Saya Ahmad Rizki, teknisi Anda. Ada yang bisa saya bantu? (Status saya saat ini: ${getReadableState(state)})`;
+      }
+      
+      if (msg.includes('oke') || msg.includes('ok') || msg.includes('baik') || msg.includes('siap')) {
+        return 'Baik, mohon tunggu ya. Terima kasih!';
+      }
+      
+      return `Mohon maaf, saya kurang mengerti. Apakah ada hal spesifik tentang status perjalanan (${distance} km, ETA ${etaMin} menit) atau pembatalan yang ingin ditanyakan?`;
+    }
+
+    function receiveTechMessage(text) {
+      appendChatMessage(text, 'technician');
+    }
+
+    function contactAdmin() {
+      window.open(`https://wa.me/${ADMIN_WHATSAPP_NUMBER}`, '_blank');
+    }
+
+    function setStep1Time() {
+      const el = document.getElementById('step1-time');
+      if (el) {
+        el.textContent = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+      }
+    }
+
+    function toggleBottomSheet() {
+      const panel = document.getElementById('bottom-sheet-expanded-content');
+      if (!panel) return;
+      panel.classList.toggle('hidden');
+      isSheetExpanded = !panel.classList.contains('hidden');
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── NAVIGATION ────────────────────────────────────────────────
+    function goBack() {
+      window.location.href = 'index (5).html';
+    }
+
+    // ── TOAST NOTIFICATIONS ───────────────────────────────────────
+    function showToast(message, type = 'info', duration = 3000) {
+      const colors = {
+        success: { bg: '#e8f5e9', border: '#a5d6a7', icon: '#2e7d32', iconPath: 'M5 13l4 4L19 7' },
+        warning: { bg: '#fff8e1', border: '#ffe082', icon: '#f57f17', iconPath: 'M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+        error: { bg: '#ffebee', border: '#ef9a9a', icon: '#c62828', iconPath: 'M6 18L18 6M6 6l12 12' },
+        info: { bg: '#e3f2fd', border: '#90caf9', icon: '#1565c0', iconPath: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+      };
+      const c = colors[type] || colors.info;
+      const id = 'toast-' + Date.now();
+
+      const toast = document.createElement('div');
+      toast.id = id;
+      toast.className = 'notif-enter pointer-events-auto mb-2';
+      toast.innerHTML = `
+        <div class="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border"
+          style="background:${c.bg};border-color:${c.border}">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:${c.icon}20">
+            <svg class="w-3.5 h-3.5" style="color:${c.icon}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="${c.iconPath}"/>
+            </svg>
+          </div>
+          <span class="text-sm font-semibold flex-1" style="color:${c.icon}">${message}</span>
+          <button onclick="removeToast('${id}')" class="text-gray-400 hover:text-gray-600 transition-colors ml-1">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      `;
+
+      document.getElementById('toast-container').appendChild(toast);
+
+      setTimeout(() => removeToast(id), duration);
+    }
+
+    function removeToast(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('notif-enter');
+      el.classList.add('notif-exit');
+      setTimeout(() => el.remove(), 400);
+    }
+  </script>
+
+  <!-- ============================================================
+       RATING MODAL  –  Dark glassmorphism premium design
+  ============================================================ -->
+  <div id="rating-modal"
+    class="hidden fixed inset-0 z-[400] flex items-end sm:items-center justify-center px-3 pb-4 sm:pb-0"
+    style="background:rgba(0,0,0,0.72);backdrop-filter:blur(10px);" onclick="closeRatingModalOutside(event)">
+
+    <!-- Card -->
+    <div id="rating-card" class="rating-modal-card relative w-full max-w-sm rounded-[28px] overflow-hidden" style="background:linear-gradient(145deg,#0f172a 0%,#1e1b4b 50%,#0c1a2e 100%);
+             border:1px solid rgba(255,255,255,0.08);
+             box-shadow:0 40px 100px rgba(0,0,0,0.6),0 0 0 1px rgba(139,92,246,0.15);">
+
+      <!-- TOP DECORATION BAR -->
+      <div style="height:3px;background:linear-gradient(90deg,#7c3aed,#a855f7,#ec4899,#f59e0b);"></div>
+
+      <!-- ░░ REVIEW FORM CONTENT ░░ -->
+      <div id="rating-form-content" class="px-6 pt-6 pb-7">
+
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-5">
+          <div>
+            <div class="text-[11px] font-bold tracking-widest mb-1"
+              style="color:rgba(167,139,250,0.8);letter-spacing:0.12em;">PESANAN SELESAI ✓</div>
+            <h3 class="text-xl font-extrabold text-white leading-tight">Nilai Teknisi Anda</h3>
+            <p class="text-xs mt-1" style="color:rgba(255,255,255,0.42);">Bantu teknisi kami berkembang lebih baik</p>
+          </div>
+          <button onclick="closeRatingModal()"
+            class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 hover:scale-110 transition-transform"
+            style="background:rgba(255,255,255,0.08);">
+            <svg style="width:14px;height:14px;color:rgba(255,255,255,0.55);" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Technician mini-card -->
+        <!-- Technician profile card (circular avatar) -->
+        <div class="flex flex-col items-center text-center mb-5">
+          <div class="relative mb-3">
+            <div class="w-20 h-20 rounded-full flex items-center justify-center flex-shrink-0" style="background:linear-gradient(135deg,#1e40af,#3b82f6);
+                        box-shadow:0 0 0 3px rgba(59,130,246,0.3), 0 8px 24px rgba(30,64,175,0.4);">
+              <svg style="width:36px;height:36px;color:white;" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+              </svg>
+            </div>
+            <!-- Online badge -->
+            <div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
+              style="background:#16a34a;border:2.5px solid #0f172a;">
+              <svg style="width:12px;height:12px;color:white;" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                stroke-width="3">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <div class="text-base font-extrabold text-white mb-0.5" id="rating-tech-name">Teknisi</div>
+          <div class="flex items-center gap-1.5 mt-1">
+            <div class="flex items-center gap-1 px-2.5 py-1 rounded-full" style="background:rgba(251,191,36,0.12);">
+              <svg style="width:12px;height:12px;color:#fbbf24;" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+              </svg>
+              <span id="rating-tech-prev-rating" style="font-size:11px;font-weight:700;color:#fbbf24;">4.9</span>
+            </div>
+            <span class="text-[11px]" style="color:rgba(255,255,255,0.35);">Layanan selesai</span>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div style="height:1px;background:rgba(255,255,255,0.06);margin-bottom:16px;"></div>
+
+        <!-- Rincian Pembayaran & Durasi (Receipt Card) -->
+        <div id="receipt-details" class="mb-5 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Layanan:</span>
+            <span id="receipt-service" class="font-bold text-white text-right">Bantuan Kendaraan Mogok</span>
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Durasi Pengerjaan:</span>
+            <span id="receipt-duration" class="font-bold text-slate-200">00:00</span>
+          </div>
+          <div class="h-[1px] bg-white/5"></div>
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-slate-400 font-medium">Total Biaya:</span>
+            <span id="receipt-cost" class="font-black text-amber-400">Rp 75.000</span>
+          </div>
+        </div>
+
+        <!-- Stars -->
+        <div class="text-center mb-2">
+          <div class="flex items-center justify-center gap-2 mb-3" id="stars-container">
+            <!-- Stars rendered by JS -->
+          </div>
+          <!-- Dynamic label -->
+          <div id="rating-label" class="text-sm font-bold transition-all duration-300"
+            style="color:rgba(255,255,255,0.2);min-height:20px;">Tap bintang untuk memberi nilai</div>
+        </div>
+
+        <!-- Divider -->
+        <div style="height:1px;background:rgba(255,255,255,0.06);margin:16px 0;"></div>
+
+        <!-- Review textarea -->
+        <div class="mb-4">
+          <label style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);letter-spacing:0.08em;
+                        display:block;margin-bottom:8px;">ULASAN (OPSIONAL)</label>
+          <textarea id="rating-review-text" class="review-textarea" rows="3"
+            placeholder="Tulis ulasan Anda..."></textarea>
+        </div>
+
+        <!-- Submit -->
+        <button class="submit-review-btn" onclick="submitRating()">
+          <span>Kirim Penilaian</span>
+        </button>
+
+        <p class="text-center mt-3" style="font-size:11px;color:rgba(255,255,255,0.2);">Ulasan Anda bersifat anonim</p>
+      </div>
+
+      <!-- ░░ SUCCESS STATE (hidden initially) ░░ -->
+      <div id="rating-success-content" class="hidden px-6 py-10 text-center">
+        <!-- Animated checkmark circle -->
+        <div class="flex items-center justify-center mb-5">
+          <div class="check-circle-anim rounded-full flex items-center justify-center" style="width:90px;height:90px;
+                      background:linear-gradient(135deg,#16a34a,#15803d);
+                      box-shadow:0 0 30px rgba(34,197,94,0.4);">
+            <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+              <path class="check-draw-anim" d="M10 23 L18 31 L34 13" stroke="white" stroke-width="4"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Stars echo -->
+        <div id="success-stars" class="flex justify-center gap-1 mb-4"></div>
+
+        <h3 class="text-2xl font-extrabold text-white mb-2">Terima Kasih! 🎉</h3>
+        <p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.6;font-weight:600;">
+          Terima kasih atas penilaian Anda!
+        </p>
+        <p style="font-size:12px;color:rgba(255,255,255,0.3);line-height:1.5;margin-top:4px;">
+          Anda akan diarahkan ke halaman utama.
+        </p>
+
+        <!-- Loading bar -->
+        <div style="margin-top:24px;height:3px;background:rgba(255,255,255,0.08);border-radius:99px;overflow:hidden;">
+          <div id="success-progress-bar" style="height:100%;width:0%;border-radius:99px;
+                      background:linear-gradient(90deg,#7c3aed,#a855f7,#22c55e);
+                      transition:width 2.4s linear;"></div>
+        </div>
+        <p style="font-size:10px;color:rgba(255,255,255,0.22);margin-top:8px;">Mengalihkan ke beranda…</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ════════════════════════════════════════════════════════════
+    //  RATING MODAL ENGINE
+    // ════════════════════════════════════════════════════════════
+    let selectedRating = 0;
+    let hoverRating = 0;
+
+    const RATING_META = [
+      null,
+      { label: 'Sangat kecewa', color: '#f87171' },   // 1
+      { label: 'Kurang puas', color: '#fb923c' },   // 2
+      { label: 'Cukup puas', color: '#facc15' },   // 3
+      { label: 'Puas', color: '#34d399' },   // 4
+      { label: 'Sangat puas! ✨', color: '#a3e635' },   // 5  (bright lime-gold)
+    ];
+
+    // ── Build star SVGs ───────────────────────────────────────────
+    function buildStars() {
+      const container = document.getElementById('stars-container');
+      container.innerHTML = '';
+      for (let i = 1; i <= 5; i++) {
+        const el = document.createElement('div');
+        el.className = 'rating-star';
+        el.dataset.value = i;
+        el.style.cssText = 'width:44px;height:44px;display:flex;align-items:center;justify-content:center;';
+        el.innerHTML = starSVG(i, false);
+
+        el.addEventListener('mouseenter', () => onStarHover(i));
+        el.addEventListener('mouseleave', () => onStarLeave());
+        el.addEventListener('click', () => onStarClick(i));
+        // Touch support
+        el.addEventListener('touchend', (e) => { e.preventDefault(); onStarClick(i); });
+
+        container.appendChild(el);
+      }
+    }
+
+    function starSVG(idx, filled) {
+      const grad = filled
+        ? `url(#star-grad-${idx})`
+        : 'rgba(255,255,255,0.12)';
+      return `
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="star-grad-${idx}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#fde68a"/>
+              <stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient>
+          </defs>
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+            fill="${grad}"
+            stroke="${filled ? '#f59e0b' : 'rgba(255,255,255,0.08)'}"
+            stroke-width="0.5"
+            stroke-linejoin="round"/>
+        </svg>`;
+    }
+
+    function updateStarDisplay(upTo) {
+      const stars = document.querySelectorAll('#stars-container .rating-star');
+      stars.forEach((el, idx) => {
+        const filled = idx + 1 <= upTo;
+        el.innerHTML = starSVG(idx + 1, filled);
+        el.classList.toggle('filled', filled);
+      });
+    }
+
+    function onStarHover(val) {
+      hoverRating = val;
+      updateStarDisplay(val);
+      updateLabel(val);
+    }
+
+    function onStarLeave() {
+      hoverRating = 0;
+      updateStarDisplay(selectedRating);
+      updateLabel(selectedRating);
+    }
+
+    function onStarClick(val) {
+      selectedRating = val;
+      updateStarDisplay(val);
+      updateLabel(val);
+      // Pop animation on clicked star
+      const stars = document.querySelectorAll('#stars-container .rating-star');
+      const el = stars[val - 1];
+      el.classList.remove('star-pop');
+      void el.offsetWidth; // reflow
+      el.classList.add('star-pop');
+      el.addEventListener('animationend', () => el.classList.remove('star-pop'), { once: true });
+    }
+
+    function updateLabel(val) {
+      const label = document.getElementById('rating-label');
+      if (!val) {
+        label.textContent = 'Tap bintang untuk memberi nilai';
+        label.style.color = 'rgba(255,255,255,0.2)';
+        return;
+      }
+      const meta = RATING_META[val];
+      label.textContent = meta.label;
+      label.style.color = meta.color;
+      label.style.textShadow = `0 0 12px ${meta.color}55`;
+    }
+
+    // ── Open / Close ───────────────────────────────────────────
+    function openRatingModal() {
+      const modal = document.getElementById('rating-modal');
+      const card = document.getElementById('rating-card');
+
+      // Reset state
+      selectedRating = 0;
+      hoverRating = 0;
+      document.getElementById('rating-review-text').value = '';
+      document.getElementById('rating-form-content').classList.remove('hidden');
+      document.getElementById('rating-success-content').classList.add('hidden');
+
+      // Populate tech name from the panel
+      const techName = document.getElementById('tech-name');
+      if (techName) {
+        document.getElementById('rating-tech-name').textContent = techName.textContent;
+      }
+      // Previous rating
+      const prevRating = document.getElementById('tech-dist-val');
+      // use the star rating box
+      const ratingBox = document.querySelector('#tech-section .bg-green-50 .font-extrabold');
+      if (ratingBox) {
+        document.getElementById('rating-tech-prev-rating').textContent =
+          ratingBox.textContent.replace('★ ', '');
+      }
+
+      buildStars();
+      updateLabel(0);
+
+      // Hide bottom CTA
+      const bottomCta = document.getElementById('bottom-cta');
+      if (bottomCta) bottomCta.classList.remove('visible');
+
+      modal.classList.remove('hidden');
+      void card.offsetWidth;
+      card.classList.add('rating-modal-enter');
+      card.classList.remove('rating-modal-exit');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeRatingModal(cb) {
+      const modal = document.getElementById('rating-modal');
+      const card = document.getElementById('rating-card');
+      card.classList.remove('rating-modal-enter');
+      card.classList.add('rating-modal-exit');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        card.classList.remove('rating-modal-exit');
+        document.body.style.overflow = '';
+        if (typeof cb === 'function') cb();
+      }, 320);
+    }
+
+    function closeRatingModalOutside(e) {
+      if (e.target === document.getElementById('rating-modal')) closeRatingModal();
+    }
+
+    // ── Submit ──────────────────────────────────────────────────
+    function submitRating() {
+      if (!selectedRating) {
+        // Shake the stars to remind
+        const container = document.getElementById('stars-container');
+        container.style.animation = 'none';
+        void container.offsetWidth;
+        container.style.animation = 'bounceIn 0.4s ease';
+        showToast('Pilih bintang terlebih dahulu!', 'warning', 2000);
+        return;
+      }
+
+      // ── Save to localStorage ──────────────────────────────────
+      const reviewData = {
+        rating: selectedRating,
+        review: document.getElementById('rating-review-text').value.trim(),
+        technicianName: document.getElementById('rating-tech-name').textContent,
+        serviceName: currentService ? currentService.title : 'Layanan Darurat',
+        timestamp: new Date().toISOString(),
+      };
+      try {
+        const existing = JSON.parse(localStorage.getItem('siaga_ratings') || '[]');
+        existing.push(reviewData);
+        localStorage.setItem('siaga_ratings', JSON.stringify(existing));
+        localStorage.setItem('siaga_last_rating', JSON.stringify(reviewData));
+      } catch (_) { /* localStorage not available */ }
+
+      // Simpan rating ke server juga, supaya tersimpan permanen dan
+      // memengaruhi rata-rata rating teknisi yang sesungguhnya.
+      if (backendOrderId && window.SiagaAPI && SiagaAPI.isLoggedIn()) {
+        SiagaAPI.submitRating({
+          orderId: backendOrderId,
+          stars: selectedRating,
+          comment: reviewData.review
+        }).catch(err => console.warn('Gagal mengirim rating ke server:', err.message));
+      }
+
+      // Build echo stars for success screen
+      const echoContainer = document.getElementById('success-stars');
+      echoContainer.innerHTML = '';
+      for (let i = 1; i <= 5; i++) {
+        const s = document.createElement('div');
+        s.style.cssText = 'width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;';
+        const filled = i <= selectedRating;
+        s.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+            fill="${filled ? '#f59e0b' : 'rgba(255,255,255,0.12)'}" stroke="none"/></svg>`;
+        echoContainer.appendChild(s);
+      }
+
+      // Switch to success state
+      document.getElementById('rating-form-content').classList.add('hidden');
+      const successContent = document.getElementById('rating-success-content');
+      successContent.classList.remove('hidden');
+
+      // Spawn mini confetti particles
+      spawnConfetti(successContent);
+
+      // Kick off the progress bar
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.getElementById('success-progress-bar').style.width = '100%';
+        });
+      });
+
+      // Success toast
+      showToast('Terima kasih atas penilaian Anda! ⭐', 'success', 3000);
+
+      // Redirect after 2.8s
+      setTimeout(() => {
+        closeRatingModal(() => {
+          window.location.href = 'index (5).html';
+        });
+      }, 2800);
+    }
+
+    // ── Confetti effect ──────────────────────────────────────────
+    function spawnConfetti(container) {
+      const colors = ['#fbbf24', '#a855f7', '#ec4899', '#22c55e', '#3b82f6', '#f97316'];
+      for (let i = 0; i < 24; i++) {
+        const p = document.createElement('div');
+        p.className = 'confetti-particle';
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+        p.style.left = (20 + Math.random() * 60) + '%';
+        p.style.top = '20%';
+        p.style.animationDelay = (Math.random() * 0.6) + 's';
+        p.style.animationDuration = (1.2 + Math.random() * 1) + 's';
+        p.style.width = (4 + Math.random() * 5) + 'px';
+        p.style.height = (4 + Math.random() * 5) + 'px';
+        p.style.borderRadius = Math.random() > 0.5 ? '50%' : '1px';
+        container.appendChild(p);
+        p.addEventListener('animationend', () => p.remove());
+      }
+    }
+
+    // ── Hook into onTechArrived to inject "Complete Service" button ──
+    const _origOnTechArrived = onTechArrived;
+    function onTechArrived() {
+      _origOnTechArrived();
+
+      // Update tech journey card to completed
+      const journeyStatus = document.getElementById('journey-status');
+      if (journeyStatus) journeyStatus.textContent = 'Teknisi Telah Tiba!';
+      
+      const pct = document.getElementById('journey-progress-pct');
+      if (pct) pct.textContent = '100%';
+      
+      const bar = document.getElementById('journey-progress-bar');
+      if (bar) bar.style.width = '100%';
+
+      const journeyEta = document.getElementById('journey-eta');
+      if (journeyEta) journeyEta.textContent = 'Tiba!';
+
+      const journeyDist = document.getElementById('journey-dist');
+      if (journeyDist) journeyDist.textContent = '0.0 km';
+
+      // Replace the action buttons grid with the inline Complete Service button & Admin & Chat
+      const grid = document.getElementById('action-buttons-grid');
+      if (!grid) return;
+
+      grid.innerHTML = `
+        <button class="complete-service-btn col-span-2" onclick="onSelesaikanPekerjaan()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Selesaikan
+        </button>
+        <button onclick="openChat()" id="btn-chat"
+          class="flex items-center justify-center gap-1.5 py-3 rounded-xl font-semibold text-xs transition-all hover:shadow-md"
+          style="background:#e3f2fd;color:#1565c0">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          Chat
+        </button>
+        <button onclick="contactAdmin()" id="btn-admin"
+          class="flex items-center justify-center gap-1.5 py-3 rounded-xl font-semibold text-xs transition-all hover:shadow-md"
+          style="background:#e0f2f1;color:#00796b">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.458L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.863-9.755.002-2.609-1.012-5.062-2.859-6.91-1.847-1.848-4.301-2.865-6.915-2.865-5.44 0-9.864 4.37-9.867 9.756-.002 1.8.48 3.55 1.396 5.115l-.993 3.63 3.733-.977zm11.305-7.79c-.295-.146-1.743-.848-2.013-.946-.268-.099-.463-.147-.659.146-.195.293-.756.946-.927 1.142-.17.195-.341.219-.636.073-.295-.146-1.247-.453-2.375-1.444-.877-.772-1.47-1.726-1.642-2.019-.17-.293-.018-.452.129-.597.132-.13.295-.341.443-.512.146-.17.195-.293.293-.488.099-.195.05-.366-.024-.513-.075-.146-.659-1.562-.903-2.147-.238-.57-.502-.492-.689-.502-.178-.008-.382-.01-.585-.01-.203 0-.537.075-.817.374-.28.299-1.07 1.033-1.07 2.518 0 1.485 1.097 2.918 1.244 3.112.146.195 2.158 3.247 5.228 4.54.73.308 1.3.493 1.743.631.733.23 1.401.197 1.928.12.587-.085 1.743-.701 1.986-1.378.243-.677.243-1.258.17-1.378-.074-.12-.268-.194-.563-.341z"/>
+          </svg>
+          Admin
+        </button>`;
+
+      // Show the fixed bottom CTA with slide-up
+      const bottomCta = document.getElementById('bottom-cta');
+      const spacer = document.getElementById('bottom-cta-spacer');
+      if (bottomCta) {
+        setTimeout(() => {
+          bottomCta.classList.add('visible');
+          if (spacer) spacer.classList.remove('hidden');
+        }, 800);
+      }
+    }
+
+    // ── "Selesaikan Pekerjaan" handler ─────────────────────────
+    function onSelesaikanPekerjaan() {
+      // Smooth-hide tracking sections
+      const mapSection = document.getElementById('map-section');
+      const trackingSection = document.getElementById('tracking-section');
+
+      // Fade out map and tracking
+      [mapSection, trackingSection].forEach(el => {
+        if (el) {
+          el.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+          el.style.opacity = '0';
+          el.style.transform = 'translateY(-16px) scale(0.97)';
+        }
+      });
+
+      // After fade-out, hide them and open rating modal
+      setTimeout(() => {
+        if (mapSection) mapSection.classList.add('hidden');
+        if (trackingSection) trackingSection.classList.add('hidden');
+
+        // Update tech section status
+        const statusText = document.getElementById('tech-status-text');
+        if (statusText) {
+          statusText.textContent = 'Pekerjaan telah selesai ✅';
+          statusText.parentElement.style.background = '#e8f5e9';
+        }
+
+        // Hide bottom CTA
+        const bottomCta = document.getElementById('bottom-cta');
+        if (bottomCta) bottomCta.classList.remove('visible');
+
+        // Open rating modal with slight delay for smoothness
+        setTimeout(() => openRatingModal(), 200);
+      }, 450);
+    }
+  </script>
+
+  <!-- Premium service page enhancement JS -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+      // ── Parallax dot-grid on scroll
+      const dotGrid = document.getElementById('svc-dot-grid');
+      window.addEventListener('scroll', () => {
+        if (dotGrid) dotGrid.style.transform = `translateY(${(window.scrollY * 0.02).toFixed(1)}px)`;
+      }, { passive: true });
+
+      // ── Section reveal observer
+      const sections = document.querySelectorAll('#location-section, #map-section, #request-section, #tracking-section, #tips-section');
+      sections.forEach(el => el.classList.add('section-reveal'));
+      const revealObs = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('revealed'); });
+      }, { threshold: 0.08 });
+      sections.forEach(el => revealObs.observe(el));
+
+      // ── Magnetic tilt on tech stats cells
+      document.querySelectorAll('#tech-section .grid > div').forEach(cell => {
+        cell.classList.add('svc-tilt');
+        const MAX_T = 6;
+        cell.addEventListener('mousemove', e => {
+          const r = cell.getBoundingClientRect();
+          const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+          const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
+          cell.style.setProperty('--tx', (dx * MAX_T).toFixed(2));
+          cell.style.setProperty('--ty', (dy * MAX_T).toFixed(2));
+        });
+        cell.addEventListener('mouseleave', () => {
+          cell.style.setProperty('--tx', '0');
+          cell.style.setProperty('--ty', '0');
+        });
+      });
+    });
+  </script>
+
+</body>
+
+</html>
