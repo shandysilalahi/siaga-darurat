@@ -2689,532 +2689,10 @@
       });
     }
 
-    // ── OPEN TRACKING MAP ────────────────────────────────────────────────────
-    function openTrackingMap(customerName, serviceType, address, btnContainerId, cardId, distance) {
-      trackingActive = true;
-      journeyStarted = false;
-      waypointIdx = 0;
-      currentPhaseIdx = 0;
-      activeOrder = { customerName, serviceType, address, btnContainerId, cardId, distance };
-
-      // Update order card in dashboard
-      const card = document.getElementById(cardId);
-      if (card) { card.classList.remove('new'); card.classList.add('accepted'); }
-      const btns = document.getElementById(btnContainerId);
-      if (btns) btns.innerHTML = `<div class="text-sm font-extrabold live-dot" style="color:#1e88e5;">Dalam Perjalanan</div>`;
-
-      // Populate UI
-      const nameEls = ['customer-name-display', 'nav-customer-name', 'arrived-name-display', 'chat-customer-name'];
-      nameEls.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = customerName; });
-
-      const addrEls = ['customer-address-display', 'nav-customer-address', 'arrived-address-display'];
-      addrEls.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = address; });
-
-      const distEls = ['distance-display'];
-      distEls.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = distance; });
-
-      const chipEl = document.getElementById('service-chip');
-      if (chipEl) chipEl.textContent = serviceType;
-
-      totalDist = parseFloat(distance) || 1.4;
-      currentDist = totalDist;
-
-      // Show accept phase, hide nav phase
-      document.getElementById('phase-accept').style.display = 'block';
-      document.getElementById('phase-nav').style.display = 'none';
-      document.getElementById('arrived-overlay').style.display = 'none';
-
-      document.getElementById('accept-route-status').textContent = 'Memuat rute dari OSRM…';
-      document.getElementById('eta-minutes').textContent = '--';
-      document.getElementById('eta-header').textContent = '-- mnt';
-
-      // Show overlay
-      const overlayEl = document.getElementById('tracking-overlay');
-      overlayEl.classList.add('visible');
-      document.body.style.overflow = 'hidden';
-
-      setDriverPhase(0);
-
-      // Initialize map and fetch OSRM route
-      setTimeout(() => {
-        if (!trackingMap) {
-          initTrackingMap();
-        } else {
-          resetMapLayers();
-          fetchOsrmRoute();
-        }
-      }, 200);
-    }
-
-    function initTrackingMap() {
-      trackingMap = L.map('map', { zoomControl: false, attributionControl: false });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd', maxZoom: 19
-      }).addTo(trackingMap);
-      L.control.zoom({ position: 'bottomright' }).addTo(trackingMap);
-      resetMapLayers();
-      fetchOsrmRoute();
-    }
-
-    function resetMapLayers() {
-      [tekMarker, custMarker, routeLine, travelledLine].forEach(layer => {
-        if (layer && trackingMap) trackingMap.removeLayer(layer);
-      });
-      tekMarker = custMarker = routeLine = travelledLine = null;
-      routeWaypoints = [];
-    }
-
-    // ── OSRM ROUTE FETCH ─────────────────────────────────────────────────────
-    function fetchOsrmRoute() {
-      if (!trackingMap) return;
-
-      const techPt = techGpsCoords;
-      const custPt = customerGpsCoords || { lat: techPt.lat - 0.014, lng: techPt.lng + 0.013 };
-
-      const url = `https://router.project-osrm.org/route/v1/driving/${techPt.lng},${techPt.lat};${custPt.lng},${custPt.lat}?geometries=geojson&overview=full&steps=true`;
-
-      fetch(url)
-        .then(r => r.json())
-        .then(data => {
-          if (!data.routes || data.routes.length === 0) throw new Error('No route');
-
-          const route = data.routes[0];
-          const coords = route.geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-          routeWaypoints = coords;
-
-          const distKm = (route.distance / 1000).toFixed(1);
-          const durMin = Math.ceil(route.duration / 60);
-          totalDist = parseFloat(distKm);
-          currentDist = totalDist;
-          currentEta = durMin;
-
-          document.getElementById('eta-minutes').textContent = durMin;
-          document.getElementById('eta-header').textContent = durMin + ' mnt';
-          document.getElementById('nav-eta-val').textContent = durMin;
-          document.getElementById('nav-dist-val').textContent = distKm;
-          document.getElementById('distance-display').textContent = distKm + ' km';
-          document.getElementById('accept-route-status').textContent = `Rute siap · ${distKm} km · ${durMin} menit`;
-          document.getElementById('map-dist-badge').textContent = `📍 ${distKm} km dari pelanggan`;
-
-          drawRouteOnMap(coords, techPt, custPt);
-          setDriverPhase(1); // navigating
-        })
-        .catch(err => {
-          console.warn('OSRM fetch failed, using straight-line fallback:', err);
-          const custPtFallback = customerGpsCoords || { lat: techGpsCoords.lat - 0.014, lng: techGpsCoords.lng + 0.013 };
-          const steps = 20;
-          const fallback = [];
-          for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            fallback.push({
-              lat: techGpsCoords.lat + (custPtFallback.lat - techGpsCoords.lat) * t,
-              lng: techGpsCoords.lng + (custPtFallback.lng - techGpsCoords.lng) * t
-            });
-          }
-          routeWaypoints = fallback;
-          totalDist = parseFloat(activeOrder && activeOrder.distance) || 1.4;
-          currentDist = totalDist;
-          currentEta = Math.ceil(totalDist * 4);
-          document.getElementById('eta-minutes').textContent = currentEta;
-          document.getElementById('eta-header').textContent = currentEta + ' mnt';
-          document.getElementById('accept-route-status').textContent = `Rute siap (perkiraan) · ${totalDist.toFixed(1)} km`;
-          drawRouteOnMap(fallback, techGpsCoords, custPtFallback);
-          setDriverPhase(1);
-        });
-    }
-
-    function drawRouteOnMap(coords, techPt, custPt) {
-      if (!trackingMap) return;
-
-      // Remaining route
-      routeLine = L.polyline(coords.map(c => [c.lat, c.lng]), {
-        color: '#1e88e5', weight: 6, opacity: 0.9,
-        lineJoin: 'round', lineCap: 'round'
-      }).addTo(trackingMap);
-
-      // Travelled path
-      travelledLine = L.polyline([], {
-        color: '#90caf9', weight: 5, opacity: 0.5,
-        dashArray: '6,10', lineJoin: 'round'
-      }).addTo(trackingMap);
-
-      // Markers
-      tekMarker = L.marker([techPt.lat, techPt.lng], { icon: makeTekIcon(0), zIndexOffset: 1000 }).addTo(trackingMap);
-      custMarker = L.marker([custPt.lat, custPt.lng], { icon: makeCustIcon(activeOrder ? activeOrder.customerName : 'Pelanggan'), zIndexOffset: 500 }).addTo(trackingMap);
-
-      if (activeOrder && activeOrder.address) {
-        custMarker.bindPopup(`<b>${activeOrder.customerName}</b><br><small>${activeOrder.address}</small>`, { offset: [0, -55] });
-      }
-
-      // Fit map
-      const bounds = L.latLngBounds([[techPt.lat, techPt.lng], [custPt.lat, custPt.lng]]).pad(0.3);
-      trackingMap.fitBounds(bounds, { animate: true, duration: 1.2 });
-    }
-
-    // ── MULAI PERJALANAN ─────────────────────────────────────────────────────
-    function mulaiPerjalanan() {
-      if (journeyStarted) return;
-      journeyStarted = true;
-
-      // Broadcast acceptance + trip start to customer page
-      driverSync.send('service_accept', {
-        techName: TEKNISI_NAME,
-        techCoords: techGpsCoords,
-        vehicle: localStorage.getItem('vehicleTek') || 'Honda Vario • BK 4821 TAI',
-        distance: currentDist.toFixed(1),
-        eta: currentEta
-      });
-
-      setTimeout(() => {
-        driverSync.send('trip_start', {});
-      }, 500);
-
-      // Switch to nav phase UI
-      document.getElementById('phase-accept').style.display = 'none';
-      document.getElementById('phase-nav').style.display = 'block';
-
-      // Show speed badge
-      const speedBadge = document.getElementById('speed-badge');
-      if (speedBadge) speedBadge.style.display = 'flex';
-
-      setDriverPhase(2); // on_the_way
-      document.getElementById('tracking-title').textContent = 'Dalam Perjalanan';
-      document.getElementById('tracking-subtitle').textContent = 'Menuju lokasi pelanggan';
-
-      // Auto-chat message
-      setTimeout(() => {
-        appendChatMessage('teknisi', `Halo! Saya sedang dalam perjalanan menuju lokasi Anda. Estimasi tiba: ${currentEta} menit 🚗`);
-        driverSync.send('chat_msg', { sender: 'teknisi', text: `Halo! Saya sedang dalam perjalanan menuju lokasi Anda. Estimasi tiba: ${currentEta} menit 🚗` });
-        setTimeout(() => appendChatMessage('pelanggan', 'Baik pak, saya tunggu di sini 🙏'), 3500);
-      }, 1500);
-
-      startDrivingSimulation();
-    }
-
-    // ── DRIVING SIMULATION (smooth OSRM-route following) ─────────────────────
-    function startDrivingSimulation() {
-      clearAllTimers();
-      if (!routeWaypoints || routeWaypoints.length < 2) return;
-
-      waypointIdx = 0;
-      const totalSteps = routeWaypoints.length;
-      const msPerStep = Math.max(800, Math.round((currentEta * 60 * 1000) / totalSteps));
-
-      moveTimer = setInterval(() => {
-        if (!trackingActive) { clearInterval(moveTimer); return; }
-
-        waypointIdx++;
-        if (waypointIdx >= routeWaypoints.length) {
-          clearInterval(moveTimer);
-          triggerArrival();
-          return;
-        }
-
-        const prev = routeWaypoints[waypointIdx - 1];
-        const curr = routeWaypoints[waypointIdx];
-        const bearing = calcBearing(prev, curr);
-
-        // Smooth marker animation
-        animateMarkerTo(tekMarker, [curr.lat, curr.lng], bearing, Math.round(msPerStep * 0.85));
-
-        // Update route lines
-        const travelledPts = routeWaypoints.slice(0, waypointIdx + 1).map(p => [p.lat, p.lng]);
-        const remainingPts = routeWaypoints.slice(waypointIdx).map(p => [p.lat, p.lng]);
-        if (travelledLine) travelledLine.setLatLngs(travelledPts);
-        if (routeLine) routeLine.setLatLngs(remainingPts);
-
-        // Pan map to follow technician
-        if (trackingMap && !navFocused) {
-          trackingMap.panTo([curr.lat, curr.lng], { animate: true, duration: 0.8 });
-        }
-
-        // Compute stats
-        const progressFrac = waypointIdx / (totalSteps - 1);
-        currentDist = Math.max(0, totalDist * (1 - progressFrac));
-        currentSpeed = 30 + Math.random() * 20; // simulate varying speed
-        currentEta = currentDist > 0 ? Math.ceil((currentDist / currentSpeed) * 60) : 0;
-
-        // Phase transitions
-        if (progressFrac > 0.85 && currentPhaseIdx < 3) setDriverPhase(3); // approaching
-        else if (progressFrac > 0.25 && currentPhaseIdx < 2) setDriverPhase(2);
-
-        // Update all UI
-        updateNavUI();
-
-        // Broadcast to customer page
-        driverSync.send('tech_location', {
-          coords: { lat: curr.lat, lng: curr.lng },
-          bearing: bearing,
-          speed: currentSpeed,
-          distanceRemaining: currentDist,
-          eta: currentEta
-        });
-
-      }, msPerStep);
-
-      // Broadcast initial location immediately
-      if (routeWaypoints[0]) {
-        driverSync.send('tech_location', {
-          coords: { lat: routeWaypoints[0].lat, lng: routeWaypoints[0].lng },
-          bearing: 0,
-          speed: 0,
-          distanceRemaining: currentDist,
-          eta: currentEta
-        });
-      }
-    }
-
-    function updateNavUI() {
-      const etaEl = document.getElementById('eta-minutes');
-      if (etaEl) etaEl.textContent = currentEta;
-      const etaHeaderEl = document.getElementById('eta-header');
-      if (etaHeaderEl) etaHeaderEl.textContent = currentEta + ' mnt';
-      const navEta = document.getElementById('nav-eta-val');
-      if (navEta) navEta.textContent = currentEta;
-      const navDist = document.getElementById('nav-dist-val');
-      if (navDist) navDist.textContent = currentDist.toFixed(1);
-      const distBadge = document.getElementById('map-dist-badge');
-      if (distBadge && currentPhaseIdx < 4) distBadge.textContent = `📍 ${currentDist.toFixed(1)} km dari pelanggan`;
-      const speedEl = document.getElementById('speed-display-val');
-      if (speedEl) speedEl.textContent = `${Math.round(currentSpeed)} km/h`;
-      const speedBadge = document.getElementById('speed-val');
-      if (speedBadge) speedBadge.textContent = `${Math.round(currentSpeed)} km/h`;
-
-      // Progress bar
-      const pct = Math.min(98, Math.round((1 - currentDist / totalDist) * 100));
-      const progressBar = document.getElementById('nav-progress-bar');
-      if (progressBar) progressBar.style.width = pct + '%';
-      const pctText = document.getElementById('progress-pct');
-      if (pctText) pctText.textContent = pct + '%';
-    }
-
-    // ── ARRIVAL ──────────────────────────────────────────────────────────────
-    function triggerArrival() {
-      clearAllTimers();
-      setDriverPhase(4); // arrived
-
-      currentDist = 0;
-      currentEta = 0;
-      updateNavUI();
-
-      // Snap marker to customer
-      if (custMarker && tekMarker) {
-        const custPos = custMarker.getLatLng();
-        tekMarker.setLatLng(custPos);
-        if (trackingMap) trackingMap.flyTo(custPos, 17, { animate: true, duration: 1.5 });
-      }
-
-      document.getElementById('map-dist-badge').textContent = '✅ Anda sudah tiba!';
-
-      // Broadcast to customer
-      driverSync.send('tech_arrived', {});
-
-      // Chat
-      setTimeout(() => {
-        appendChatMessage('teknisi', 'Halo pak/bu, saya sudah tiba di lokasi Anda! 🎉');
-        driverSync.send('chat_msg', { sender: 'teknisi', text: 'Halo pak/bu, saya sudah tiba di lokasi Anda! 🎉' });
-      }, 500);
-
-      // Show arrived overlay with confetti
-      setTimeout(() => showArrivedOverlay(), 1200);
-    }
-
-    function showArrivedOverlay() {
-      const ov = document.getElementById('arrived-overlay');
-      ov.style.display = 'flex';
-
-      const card = document.getElementById('arrived-card');
-      const colors = ['#1e88e5', '#10b981', '#f59e0b', '#e53935', '#8b5cf6'];
-      for (let i = 0; i < 16; i++) {
-        const dot = document.createElement('div');
-        dot.className = 'confetti-dot';
-        dot.style.cssText = `background:${colors[i % colors.length]};left:${10 + Math.random() * 80}%;top:${Math.random() * 30}%;animation-delay:${Math.random() * 0.8}s;animation-duration:${1.2 + Math.random() * 0.8}s;`;
-        card.appendChild(dot);
-      }
-    }
-
-    // ── NAVIGATION FOCUS TOGGLE ──────────────────────────────────────────────
-    function toggleNavFocus() {
-      navFocused = !navFocused;
-      const btn = document.getElementById('btn-navigasi');
-      if (navFocused) {
-        btn.style.background = 'linear-gradient(135deg,#00c853,#00897b)';
-        btn.style.boxShadow = '0 4px 16px rgba(0,200,83,0.4)';
-        if (tekMarker && trackingMap) {
-          trackingMap.flyTo(tekMarker.getLatLng(), 17, { animate: true, duration: 1 });
-        }
-        showToast('🗺️ Mode navigasi aktif — mengikuti posisi Anda');
-      } else {
-        btn.style.background = 'linear-gradient(135deg,#1e88e5,#1565c0)';
-        btn.style.boxShadow = '0 4px 16px rgba(30,136,229,0.4)';
-        if (tekMarker && custMarker && trackingMap) {
-          const bounds = L.latLngBounds([tekMarker.getLatLng(), custMarker.getLatLng()]).pad(0.3);
-          trackingMap.fitBounds(bounds, { animate: true, duration: 0.8 });
-        }
-        showToast('📍 Tampilan diperluas — memperlihatkan seluruh rute');
-      }
-    }
-
-    // ── BEARING CALCULATOR ────────────────────────────────────────────────────
-    function calcBearing(from, to) {
-      const dLng = (to.lng - from.lng) * Math.PI / 180;
-      const lat1 = from.lat * Math.PI / 180;
-      const lat2 = to.lat * Math.PI / 180;
-      const y = Math.sin(dLng) * Math.cos(lat2);
-      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-      return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
-    }
-
-    // ── SMOOTH MARKER ANIMATION ────────────────────────────────────────────────
-    function animateMarkerTo(marker, targetLatLng, bearing, duration) {
-      if (!marker || !trackingMap) return;
-      const start = marker.getLatLng();
-      const end = L.latLng(targetLatLng);
-      const dur = duration || 2000;
-      const t0 = performance.now();
-
-      function step(now) {
-        const prog = Math.min((now - t0) / dur, 1);
-        const ease = prog < 0.5 ? 4 * prog * prog * prog : 1 - Math.pow(-2 * prog + 2, 3) / 2;
-        marker.setLatLng([start.lat + (end.lat - start.lat) * ease, start.lng + (end.lng - start.lng) * ease]);
-        if (prog > 0.3 && prog < 0.4 && bearing !== undefined) {
-          marker.setIcon(makeTekIcon(bearing));
-        }
-        if (prog < 1) requestAnimationFrame(step);
-      }
-      requestAnimationFrame(step);
-    }
-
-    // ── CLOSE / CLEANUP ────────────────────────────────────────────────────────
-    function closeTrackingMap() {
-      trackingActive = false;
-      journeyStarted = false;
-      clearAllTimers();
-
-      const overlayEl = document.getElementById('tracking-overlay');
-      overlayEl.classList.remove('visible');
-      document.body.style.overflow = '';
-
-      document.getElementById('arrived-overlay').style.display = 'none';
-      document.getElementById('phase-accept').style.display = 'block';
-      document.getElementById('phase-nav').style.display = 'none';
-      document.getElementById('speed-badge').style.display = 'none';
-
-      closeChat();
-      navFocused = false;
-
-      // Clean confetti
-      const arrivedCard = document.getElementById('arrived-card');
-      if (arrivedCard) arrivedCard.querySelectorAll('.confetti-dot').forEach(d => d.remove());
-    }
-
-    function clearAllTimers() {
-      clearInterval(moveTimer);
-      clearInterval(broadcastTimer);
-      moveTimer = broadcastTimer = null;
-    }
-
-    // ── STATUS + ETA UPDATE ───────────────────────────────────────────────────
-    function updateStatusUI(phase) {
-      const cfg = { key: phase };
-      const pill = document.getElementById('status-pill');
-      if (pill) pill.innerHTML = `<span class="w-2 h-2 rounded-full live-dot bg-blue-400"></span><span id="status-text">${phase}</span>`;
-    }
-    function updateETA(minutes) {
-      const el = document.getElementById('eta-minutes');
-      if (el) el.textContent = String(minutes);
-      const h = document.getElementById('eta-header');
-      if (h) h.textContent = minutes + ' mnt';
-    }
-
-    // ── CALL SIMULATION ───────────────────────────────────────────────────────
-    function callCustomer() {
-      const name = document.getElementById('customer-name-display') ? document.getElementById('customer-name-display').textContent : 'Pelanggan';
-      showToast('📞 Menghubungi ' + name + '…');
-    }
-
-    // ── TOAST ─────────────────────────────────────────────────────────────────
-    function showToast(message) {
-      const existingToast = document.getElementById('toast-msg');
-      if (existingToast) existingToast.remove();
-      const toast = document.createElement('div');
-      toast.id = 'toast-msg';
-      toast.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);
-        background:#1a1a2e;color:white;padding:10px 20px;border-radius:999px;
-        font-size:13px;font-weight:700;z-index:9999;
-        box-shadow:0 8px 32px rgba(0,0,0,0.4);animation:fadeUp 0.3s ease both;white-space:nowrap;`;
-      toast.textContent = message;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-    }
-
-    // ── CHAT SYSTEM ───────────────────────────────────────────────────────────
-    function openChat() {
-      const panel = document.getElementById('chat-panel');
-      const backdrop = document.getElementById('chat-backdrop');
-      panel.classList.add('open');
-      backdrop.classList.add('active');
-      if (document.getElementById('chat-messages').children.length === 0) {
-        appendChatMessage('sistem', null, 'Percakapan dimulai');
-        setTimeout(() => appendChatMessage('pelanggan', 'Halo pak teknisi, mohon segera datang ya 🙏'), 500);
-      }
-    }
-
-    function closeChat() {
-      const panel = document.getElementById('chat-panel');
-      const backdrop = document.getElementById('chat-backdrop');
-      if (panel) panel.classList.remove('open');
-      if (backdrop) backdrop.classList.remove('active');
-    }
-
-    function appendChatMessage(side, text, systemLabel) {
-      const container = document.getElementById('chat-messages');
-      if (!container) return;
-      if (side === 'sistem') {
-        const div = document.createElement('div');
-        div.style.cssText = 'text-align:center;font-size:11px;color:#9ca3af;font-weight:600;padding:4px 0;';
-        div.textContent = systemLabel || '';
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
-        return;
-      }
-      const wrap = document.createElement('div');
-      wrap.style.cssText = `display:flex;flex-direction:column;align-items:${side === 'teknisi' ? 'flex-end' : 'flex-start'};`;
-      const now = new Date();
-      const time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-      wrap.innerHTML = `<div class="msg-bubble msg-${side}">${text}</div><div class="msg-time" style="text-align:${side === 'teknisi' ? 'right' : 'left'};padding:0 4px;">${time}</div>`;
-      container.appendChild(wrap);
-      container.scrollTop = container.scrollHeight;
-    }
-
-    function sendChatMessage() {
-      const input = document.getElementById('chat-text-input');
-      const text = input.value.trim();
-      if (!text) return;
-      appendChatMessage('teknisi', text);
-      // Broadcast to customer page
-      driverSync.send('chat_msg', { sender: 'teknisi', text: text });
-      input.value = '';
-
-      // Simulated auto-reply (fallback)
-      const replies = ['Baik pak, saya tunggu 😊', 'Siap pak, terima kasih 🙏', 'Oke pak, nanti saya tunggu di sini', 'Terima kasih pak sudah mau membantu!'];
-      setTimeout(() => {
-        const typingDiv = document.createElement('div');
-        typingDiv.id = 'typing-indicator';
-        typingDiv.style.cssText = 'display:flex;align-items:center;gap:4px;padding:8px 14px;background:#f0f4f8;border-radius:18px;width:fit-content;';
-        typingDiv.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
-        const container = document.getElementById('chat-messages');
-        container.appendChild(typingDiv);
-        container.scrollTop = 99999;
-        setTimeout(() => {
-          const ti = document.getElementById('typing-indicator');
-          if (ti) ti.remove();
-          appendChatMessage('pelanggan', replies[Math.floor(Math.random() * replies.length)]);
-        }, 1500 + Math.random() * 1000);
-      }, 800);
-    }
-
-    // ── SYNC LISTENERS (listen for chat from customer) ─────────────────────────
+    // ── DRIVER SYNC LISTENERS (dari RealTimeSync / BroadcastChannel) ──────────
+    // Listener ini menerima event dari tab pelanggan yang terbuka di browser yang sama.
+    // Untuk sinkronisasi lintas-device yang sesungguhnya, dipakai polling backend
+    // yang sudah diimplementasikan di fungsi-fungsi di bawah (blok script berikutnya).
     driverSync.on('chat_msg', (data) => {
       if (data.sender === 'customer') {
         appendChatMessage('pelanggan', data.text);
@@ -3231,16 +2709,8 @@
       closeTrackingMap();
     });
 
-    // ── INIT: Load data & set up geolocation ──────────────────────────────────
+    // ── INIT: GPS Geolocation teknisi ──────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
-      // Set date
-      const now = new Date();
-      const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-      const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-      const dateEl = document.getElementById('header-date');
-      if (dateEl) dateEl.textContent = days[now.getDay()] + ', ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
-
-      // Try to get technician's real GPS
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -3252,12 +2722,9 @@
           },
           { timeout: 8000, enableHighAccuracy: true }
         );
-
-        // Watch for continuous position updates
         navigator.geolocation.watchPosition(
           (pos) => {
             techGpsCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            // If actively on a trip, update the tech marker with real GPS
             if (journeyStarted && tekMarker && trackingMap) {
               tekMarker.setLatLng([techGpsCoords.lat, techGpsCoords.lng]);
             }
@@ -3266,20 +2733,15 @@
           { enableHighAccuracy: true, maximumAge: 0 }
         );
       }
-
-      // Listen for service requests from customer page
       driverSync.on('service_request', (data) => {
-        if (data.customerCoords) {
-          customerGpsCoords = data.customerCoords;
-        }
+        if (data.customerCoords) customerGpsCoords = data.customerCoords;
       });
     });
+
   </script>
 
-</body>
-
-</html>
- {
+  <script>
+    function initDynamicName() {
       const namaDepan = localStorage.getItem('namaTeknisi') || 'Andi';
       const namaLengkap = localStorage.getItem('namaTeknisiLengkap') || 'Andi Setiawan';
       const sidebarName = document.getElementById('sidebar-name');
@@ -3812,7 +3274,6 @@
     // PETA OPERASIONAL
     // ═══════════════════════════════════════════════════════════════
 
-    let petaMap = null;
 
     function initPetaMap() {
       const container = document.getElementById('peta-operasional-map');
@@ -3904,27 +3365,19 @@
     ];
 
     // State variables
-    let trackingMap = null;
-    let tekMarker = null;
-    let custMarker = null;
     let routeFullLine = null;
     let routeDrawnLine = null;
     let routeTravelledLine = null;
     let etaTimer = null;
-    let moveTimer = null;
     let countdownTimer = null;
     let routeDrawTimer = null;
     let etaMinutes = 10;
-    let waypointIdx = 0;
-    let trackingActive = false;
-    let journeyStarted = false;
     let navModeActive = false;
     let currentCustomerName = '';
     let currentCustomerAddr = '';
     let currentDistance = '';
 
     // ── TECHNICIAN NAME ────────────────────────────────────────────
-    const TEKNISI_NAME = localStorage.getItem('namaTeknisiLengkap') || 'Andi Setiawan';
 
     // ── CUSTOM MARKER ICONS ────────────────────────────────────────
     function makeTekIcon(rotation = 0) {
