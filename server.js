@@ -24,10 +24,17 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'siaga-darurat-backend', time: new Date().toISOString() });
 });
 
-// ── STATIC FRONTEND ──
-// Menyajikan index.html, service.html, teknisi.html, sync.js, config.js
-// dari folder /public agar saat di-deploy (mis. ke Vercel) satu domain
-// yang sama melayani front-end DAN API.
+// ── STATIC FRONTEND (HANYA RELEVAN SAAT JALAN LOKAL) ──
+// Saat dijalankan lokal lewat `npm start`, baris ini membuat server yang
+// sama menyajikan index.html, service.html, teknisi.html, sync.js, dan
+// api-client.js dari folder /public.
+//
+// Saat di-deploy ke VERCEL, baris ini TIDAK dipakai untuk menyajikan file
+// statis (Vercel tidak menjalankan express.static() di dalam Function).
+// Sebagai gantinya, Vercel SECARA OTOMATIS menyajikan semua isi folder
+// /public lewat CDN-nya sendiri (lihat dokumentasi "Express on Vercel"),
+// tanpa perlu vercel.json sama sekali — file ini (server.js) terdeteksi
+// otomatis sebagai entrypoint Express karena ada di root project.
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Fallback 404 khusus untuk path /api/* yang tidak cocok

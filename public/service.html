@@ -2802,7 +2802,16 @@
         if (currentStep <= 4) {
           setSearchStepComplete(steps[currentStep-2]);
           setSearchStepActive(steps[currentStep-1], currentStep === 2 ? "Mencocokkan teknisi..." : (currentStep === 3 ? "Teknisi ditemukan!" : "Menghubungi teknisi..."));
+        } else if (backendOrderId) {
+          // Order ini tersimpan nyata di server (pelanggan sudah login).
+          // JANGAN auto-assign teknisi dummy — tetap tampilkan status "menunggu"
+          // dan biarkan startBackendOrderPolling() yang memutuskan kapan lanjut,
+          // yaitu hanya setelah ada TEKNISI SUNGGUHAN yang menerima pesanan ini.
+          clearInterval(searchMsgInterval);
+          setSearchStepActive(steps[3], "Menunggu teknisi tersedia menerima pesanan Anda...");
         } else {
+          // Belum login / order gagal dibuat di server: tetap jalankan simulasi
+          // visual seperti semula supaya pengunjung tanpa akun tetap bisa lihat demo.
           clearInterval(searchMsgInterval);
           setOrderState('TECHNICIAN_FOUND');
         }
